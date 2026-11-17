@@ -397,7 +397,8 @@ test('the selected order’s tray and mixing highlights follow the bowl’s prog
   const random = [.6, 0, 0]
   currentCustomer(state)!.order = makeOrder(state, 'classic', () => random.shift()!)
   const render = () => renderApp(state, {
-    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), orderDetailId: currentCustomer(state)?.id ?? null, modal: null,
+    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
+    orderDetailId: currentCustomer(state)?.id ?? null, modal: null,
     heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
   })
   const cue = (action: string) => new RegExp('suggested-action" data-action="' + action + '"')
@@ -434,7 +435,8 @@ test('a topping-free order suggests the light mix immediately after the first mi
   gather(state, ['rice', 'kumquat', 'shrimpSalt'])
   mix(state)
   const html = renderApp(state, {
-    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), orderDetailId: currentCustomer(state)?.id ?? null, modal: null,
+    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
+    orderDetailId: currentCustomer(state)?.id ?? null, modal: null,
     heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
   })
   assert.match(html, /suggested-action" data-action="final-mix"/)

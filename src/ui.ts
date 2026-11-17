@@ -10,6 +10,7 @@ export interface ScreenOptions {
   initialMute: boolean
   prepTab: 'market' | 'menu'
   previousCustomers: ReadonlySet<number>
+  customerSpeechId: number | null
   orderDetailId: number | null
   modal: Modal
   heatOpen: boolean
@@ -170,12 +171,15 @@ function patienceColor(percent: number): string {
   return percent > 55 ? 'green' : percent > 25 ? 'yellow' : 'red'
 }
 
-function customerFigure(state: GameState, customer: Customer, previousCustomers: ReadonlySet<number>): string {
+function customerFigure(state: GameState, customer: Customer, options: ScreenOptions): string {
   const percent = Math.round(patienceLeft(state, customer) * 100)
-  const arriving = !previousCustomers.has(customer.id) && (state.shift?.elapsedMs ?? 0) - customer.arrivalMs < 750
+  const arriving = !options.previousCustomers.has(customer.id) && (state.shift?.elapsedMs ?? 0) - customer.arrivalMs < 750
+  const active = state.shift?.activeId === customer.id
+  const speaking = active && options.customerSpeechId === customer.id
   const person = profiles[customer.profile]
   return `<button type="button" class="customer-figure${arriving ? ' arriving' : ''}${customer.id % 2 ? '' : ' from-right'}" data-action="customer" data-id="${customer.id}"
-     aria-pressed="${state.shift?.activeId === customer.id}" title="${person.role}">
+     aria-label="${person.name}" aria-pressed="${active}" title="${person.role}"${speaking ? ' aria-describedby="customer-speech"' : ''}>
+    ${speaking ? `<span class="customer-speech" id="customer-speech">${escape(person.line)}</span>` : ''}
     <span class="customer-sprite">${guestSprite(customer.profile)}</span>
     <b>${person.name}</b>
     <span class="patience" role="progressbar" aria-label="Kiên nhẫn của ${person.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" data-patience="${customer.id}">
@@ -188,7 +192,7 @@ function queueScene(state: GameState, options: ScreenOptions): string {
   const queue = state.shift?.queue ?? []
   return `<section class="queue-scene" aria-label="Hàng khách đợi">
     ${counterScene(state.level)}
-    <div class="customers">${queue.length ? queue.map(customer => customerFigure(state, customer, options.previousCustomers)).join('')
+    <div class="customers">${queue.length ? queue.map(customer => customerFigure(state, customer, options)).join('')
       : `<p class="queue-empty">${enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
     ${options.departure ? `<div class="departure" aria-hidden="true"><span>${escape(options.departure.text)}</span><div>${guestSprite(options.departure.profile)}</div></div>` : ''}
   </section>`
@@ -384,7 +388,6 @@ function tray(state: GameState, id: IngredientId, customer?: Customer): string {
 }
 
 function shopScreen(state: GameState, options: ScreenOptions): string {
-  const guest = currentCustomer(state)
   return `<main class="game-screen shop-screen">
     ${statusStrip(state, true)}
     <div class="queue-heading"><h1>Quầy bán hàng</h1><div class="heading-buttons">
@@ -392,7 +395,6 @@ function shopScreen(state: GameState, options: ScreenOptions): string {
       ${labelButton('help', 'Hướng dẫn nhanh', 'help')}
     </div></div>
     ${queueScene(state, options)}
-    ${guest ? `<p class="guest-quote">${profiles[guest.profile].line}</p>` : ''}
     ${kitchen(state, options)}
   </main>`
 }

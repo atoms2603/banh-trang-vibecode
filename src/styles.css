@@ -354,7 +354,7 @@ h1, h2, h3, p { margin: 0; }
 .queue-heading .icon-button { width: 30px; height: 30px; }
 .queue-scene {
   position: relative;
-  height: clamp(130px, 36vw, 148px);
+  height: clamp(138px, 36vw, 148px);
   isolation: isolate;
   overflow: hidden;
   border: 1px solid #c89a7f;
@@ -403,6 +403,38 @@ h1, h2, h3, p { margin: 0; }
 .customer-figure.arriving.from-right { animation-name: enter-right; }
 @keyframes enter-left { from { opacity: 0; transform: translateX(-64px); } to { opacity: 1; transform: none; } }
 @keyframes enter-right { from { opacity: 0; transform: translateX(64px); } to { opacity: 1; transform: none; } }
+.customer-figure[aria-describedby="customer-speech"] { z-index: 1; }
+.customer-speech {
+  --arrow-x: 50%;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  transform: translateX(-50%);
+  width: 130px;
+  padding: 4px 6px;
+  border: 1px solid #bf9071;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #654433;
+  box-shadow: 0 2px 3px #5b3b2b33;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
+}
+.customer-speech::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: var(--arrow-x);
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: solid #bf9071;
+  border-width: 0 1px 1px 0;
+  background: #fff8e8;
+}
 .customer-figure b {
   display: block;
   max-width: 100%;
@@ -462,7 +494,6 @@ h1, h2, h3, p { margin: 0; }
 .departure div { width: 47px; height: 61px; }
 @keyframes walk-away { 0% { opacity: 0; transform: translate(0, 3px); } 15%, 60% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(75px, -1px); } }
 
-.guest-quote { color: #815f49; font-size: 11px; text-align: center; margin: 3px 0 4px; }
 .order-slip {
   padding: 6px 8px 5px;
   border: 1px solid #d7b898;
@@ -1066,6 +1097,14 @@ h1, h2, h3, p { margin: 0; }
   .shop-layout .status-strip > span { min-height: 27px; padding-inline: 4px; gap: 3px; }
   .shop-layout .status-strip > span svg { width: 13px; height: 13px; }
   .shop-layout .status-close { font-size: 10px; }
+  .customer-figure:first-child:nth-last-child(n + 3) .customer-speech {
+    --arrow-x: 22px;
+    transform: translateX(-23px);
+  }
+  .customer-figure:last-child:nth-child(n + 3) .customer-speech {
+    --arrow-x: calc(100% - 22px);
+    transform: translateX(calc(-100% + 23px));
+  }
 }
 @media (max-width: 390px) {
   .shop-layout .queue-heading h1 { font-size: 18px; }

@@ -39,7 +39,8 @@ app.append(screen, toast, spotlight, modalRoot)
 const loaded = loadGame()
 let state = loaded.game
 const options: ScreenOptions = {
-  home: true, initialMute: false, prepTab: 'market', previousCustomers: new Set(), orderDetailId: null, modal: null, heatOpen: false, replyFor: null,
+  home: true, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
+  orderDetailId: null, modal: null, heatOpen: false, replyFor: null,
   reportPeriod: 'day', reportDay: state?.reports.at(-1)?.day ?? 1, warning: loaded.warning,
   departure: null,
 }
@@ -234,6 +235,7 @@ function beginGame(): void {
   state.muted = keepMuted
   options.home = false
   options.prepTab = 'market'
+  options.customerSpeechId = null
   options.orderDetailId = null
   options.heatOpen = false
   options.reportDay = 1
@@ -430,10 +432,15 @@ function handle(button: HTMLButtonElement): void {
         move = true
       }
       break
-    case 'customer':
-      result = selectCustomer(state, Number(id))
-      if (result.ok && guest?.id !== Number(id)) options.heatOpen = false
+    case 'customer': {
+      const customerId = Number(id)
+      result = selectCustomer(state, customerId)
+      if (result.ok) {
+        options.customerSpeechId = customerId
+        if (guest?.id !== customerId) options.heatOpen = false
+      }
       break
+    }
     case 'heat':
       if (['0', '1', '2', '3'].includes(id ?? '')) result = addHeat(state, Number(id) as Heat)
       options.heatOpen = false
