@@ -40,7 +40,7 @@ const loaded = loadGame()
 let state = loaded.game
 const options: ScreenOptions = {
   home: true, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
-  orderDetailId: null, modal: null, heatOpen: false, replyFor: null,
+  modal: null, heatOpen: false, replyFor: null,
   reportPeriod: 'day', reportDay: state?.reports.at(-1)?.day ?? 1, warning: loaded.warning,
   departure: null,
 }
@@ -119,12 +119,15 @@ function renderTutorial(): void {
   }
   const controls = Array.from(screen.querySelectorAll<HTMLButtonElement>('button[data-action]'))
   const button = controls.find(control => control.dataset.action === lesson.action && control.dataset.id === lesson.id)
+  const sticker = lesson.action === 'customer'
+    ? controls.find(control => control.dataset.action === 'select-order' && control.dataset.id === lesson.id)
+    : undefined
   const entrance = button?.matches('.customer-figure.arriving')
     ? button.getAnimations({ subtree: true }).filter(animation =>
       (animation.pending || animation.playState === 'running')
       && Number.isFinite(animation.effect?.getComputedTiming().endTime))
     : []
-  for (const control of controls) control.inert = control !== button || entrance.length > 0
+  for (const control of controls) control.inert = (control !== button && control !== sticker) || entrance.length > 0
   for (const summary of screen.querySelectorAll('summary')) summary.inert = true
 
   // The customer card still moves during its entrance, so its bounds are not ready yet.
@@ -135,6 +138,7 @@ function renderTutorial(): void {
     if (!target.isConnected) return
     if (button) button.inert = false
     else target.tabIndex = -1
+    if (sticker) sticker.inert = false
     tutorialTarget = target
     target.setAttribute('aria-describedby', instruction.id)
     const label = 'Hướng dẫn ngày 1 · ' + (lesson.step + 1) + '/' + lesson.total
@@ -236,7 +240,6 @@ function beginGame(): void {
   options.home = false
   options.prepTab = 'market'
   options.customerSpeechId = null
-  options.orderDetailId = null
   options.heatOpen = false
   options.reportDay = 1
   options.reportPeriod = 'day'
@@ -333,7 +336,8 @@ function showReport(game: GameState): void {
 }
 
 function handle(button: HTMLButtonElement): void {
-  const { action, id, value } = button.dataset
+  const { action: buttonAction, id, value } = button.dataset
+  const action = buttonAction === 'select-order' ? 'customer' : buttonAction
   if (!action || action === 'brand' || (!options.home && !lessonAllows(state, action, id))) return
   if (action !== 'mute' && action !== 'deliver') sound(action === 'mix' ? 'mix' : 'tap', muted())
   if (action === 'new') {
@@ -355,14 +359,6 @@ function handle(button: HTMLButtonElement): void {
   }
   if (!state) return
 
-  if (action === 'toggle-order' && state.phase === 'shop') {
-    const customerId = Number(id)
-    options.orderDetailId = options.orderDetailId === customerId ? null : customerId
-    renderScreen()
-    if (options.orderDetailId !== null) screen.querySelector<HTMLButtonElement>('[data-action="close-order"]')?.focus({ preventScroll: true })
-    return
-  }
-  if (action === 'close-order') return closeOrderDetails()
   if (action === 'close-shop' && state.phase === 'shop') return showModal('close-shop')
   if (action === 'close-confirm' && options.modal === 'close-shop') {
     if (closeShop(state)) showReport(state)
@@ -426,7 +422,6 @@ function handle(button: HTMLButtonElement): void {
       result = openShop(state)
       if (result.ok) {
         options.heatOpen = false
-        options.orderDetailId = null
         options.departure = null
         lastFrame = performance.now()
         move = true
@@ -436,7 +431,8 @@ function handle(button: HTMLButtonElement): void {
       const customerId = Number(id)
       result = selectCustomer(state, customerId)
       if (result.ok) {
-        options.customerSpeechId = customerId
+        if (buttonAction === 'customer') options.customerSpeechId = customerId
+        else if (guest?.id !== customerId) options.customerSpeechId = null
         if (guest?.id !== customerId) options.heatOpen = false
       }
       break
@@ -483,18 +479,6 @@ function handle(button: HTMLButtonElement): void {
   renderScreen(move)
   if (payment?.origin) showPayment(payment.origin, payment.amount)
 }
-
-function closeOrderDetails(): void {
-  const customerId = options.orderDetailId
-  if (customerId === null) return
-  options.orderDetailId = null
-  renderScreen()
-  screen.querySelector<HTMLButtonElement>(`[data-action="toggle-order"][data-id="${customerId}"]`)?.focus({ preventScroll: true })
-}
-
-screen.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && screen.querySelector('.order-details:not([hidden])')) closeOrderDetails()
-})
 
 app.addEventListener('click', event => {
   if (!(event.target instanceof Element)) return

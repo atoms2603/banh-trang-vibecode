@@ -11,7 +11,6 @@ export interface ScreenOptions {
   prepTab: 'market' | 'menu'
   previousCustomers: ReadonlySet<number>
   customerSpeechId: number | null
-  orderDetailId: number | null
   modal: Modal
   heatOpen: boolean
   replyFor: number | null
@@ -230,7 +229,7 @@ function orderSlip(customer: Customer, bowl?: Bowl): string {
   const person = profiles[customer.profile]
   const foodList = orderIngredientIds(order)
   const heatMismatch = Boolean(bowl?.ingredients.chili && bowl.heat !== order.heat)
-  return `<section class="order-slip" aria-label="Chi tiết phiếu ${customer.id}">
+  return `<div class="order-slip">
     <div class="order-ticket-head">
       <span class="order-stamp">${icon('storefront', 16)}</span>
       <div><p class="order-ticket-title">Phiếu order</p><span class="order-customer">${person.name}</span></div>
@@ -244,18 +243,18 @@ function orderSlip(customer: Customer, bowl?: Bowl): string {
     <div class="order-notes"><b>Ghi chú</b><span${heatMismatch ? ' class="note-mismatch"' : ''}>${heatLabels[order.heat]}</span>
       ${order.noCilantro ? `<span${bowl?.ingredients.cilantro ? ' class="note-mismatch"' : ''}>Bỏ rau răm</span>` : ''}
     </div>
-  </section>`
+  </div>`
 }
 
-function receiptSummary(guest: Customer, detailId: number | null, active: boolean, bowl?: Bowl): string {
+function receiptSummary(guest: Customer, active: boolean, bowl?: Bowl): string {
   const { order } = guest
   const ids = orderIngredientIds(order)
   const checked = ids.filter(id => ingredientProgress(id, order, bowl).complete).length
   const notes = [heatLabels[order.heat], ...(order.noCilantro ? ['Bỏ rau răm'] : []), ...(order.extraMango ? ['×2 xoài'] : [])]
   const dish = menu[order.dish].name.replace(/^Bánh tráng (trộn )?/, '')
   return `<li>
-    <button type="button" class="order-receipt" data-action="toggle-order" data-id="${guest.id}"
-      aria-expanded="${detailId === guest.id}" aria-current="${active}" aria-controls="order-details">
+    <button type="button" class="order-receipt" data-action="select-order" data-id="${guest.id}"
+      aria-current="${active}" aria-controls="order-details">
       <span class="receipt-meta"><b>#${String(guest.id).padStart(3, '0')}</b><span>${profiles[guest.profile].name}</span></span>
       <b class="receipt-dish">${dish}</b>
       <span class="receipt-notes">${notes.join(' · ')}</span>
@@ -264,24 +263,22 @@ function receiptSummary(guest: Customer, detailId: number | null, active: boolea
   </li>`
 }
 
-function orderDock(state: GameState, options: ScreenOptions): string {
+function orderDock(state: GameState): string {
   const queue = state.shift?.queue ?? []
-  const activeId = state.shift?.activeId
+  const active = currentCustomer(state)
   const bowl = state.shift?.bowl
-  const detail = queue.find(customer => customer.id === options.orderDetailId)
-  return `<aside class="order-dock" aria-label="Thanh gỗ giữ phiếu">
-    <h2 class="dock-heading">${icon('ledger', 15)} Phiếu <span>${queue.length}</span></h2>
-    <div class="order-details" id="order-details" data-order-id="${detail?.id ?? ''}" ${detail ? '' : 'hidden'}>
-      ${detail ? `<div class="order-detail-bar">
-        ${activeId === detail.id ? '<span>Đang làm</span>' : `<button type="button" class="button quiet order-select" data-action="customer" data-id="${detail.id}">Làm đơn này</button>`}
-        ${labelButton('close-order', 'Đóng chi tiết phiếu', 'close')}
-      </div>${orderSlip(detail, activeId === detail.id ? bowl : undefined)}` : ''}
-    </div>
-    <div class="order-sheet">
-      ${queue.length ? `<ol class="order-list" aria-label="Phiếu đang chờ" role="list">
-        ${queue.map(guest => receiptSummary(guest, options.orderDetailId, guest.id === activeId, guest.id === activeId ? bowl : undefined)).join('')}
-      </ol>` : '<p class="dock-empty">Đang chờ đơn</p>'}
-    </div>
+  return `<aside class="order-dock" aria-label="Phiếu order và hàng chờ">
+    <section class="order-details" id="order-details" aria-label="Phiếu order đang làm" data-order-id="${active?.id ?? ''}">
+      ${active ? orderSlip(active, bowl) : '<div class="order-slip order-slip-empty"><p class="order-ticket-title">Phiếu order</p></div>'}
+    </section>
+    <section class="order-board" aria-labelledby="order-board-title">
+      <h2 class="dock-heading" id="order-board-title">${icon('ledger', 15)} Phiếu chờ <span>${queue.length}</span></h2>
+      <div class="order-sheet">
+        ${queue.length ? `<ol class="order-list" aria-label="Phiếu đang chờ" role="list">
+          ${queue.map(guest => receiptSummary(guest, guest.id === active?.id, guest.id === active?.id ? bowl : undefined)).join('')}
+        </ol>` : ''}
+      </div>
+    </section>
   </aside>`
 }
 
@@ -515,7 +512,7 @@ export function renderApp(state: GameState | null, options: ScreenOptions): stri
     return `<div class="shop-layout">
       ${topbar}
       <div class="game-frame">${warning}${shopScreen(state, options)}</div>
-      ${orderDock(state, options)}
+      ${orderDock(state)}
     </div>`
   }
   return `<div class="game-frame">
