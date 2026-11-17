@@ -1,0 +1,463 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { ingredientIds } from '../src/data.ts'
+import { defaultPrice, fairPrice, money, priceBand, priceOf, sumReports } from '../src/economy.ts'
+import {
+  addHeat, addIngredient, changePrice, CLOSE_MINUTE, closeShop, currentCustomer, deliver, finishMix, makeOrder, mixDuration,
+  mixProgress, newGame, nextDay, openShop, packBowl, PATIENCE_MS, purchase, replyToReview,
+  selectCustomer, SHIFT_MS, tick, toggleDish, toggleMix, toggleStaff, trashBowl,
+} from '../src/game.ts'
+import { parseSave } from '../src/storage.ts'
+import { departureLine } from '../src/reviews.ts'
+import { advanceTutorial, currentLesson, lessonAllows } from '../src/tutorial.ts'
+import { renderApp } from '../src/ui.ts'
+import type { GameState, Heat, IngredientId } from '../src/types.ts'
+
+const first = () => 0
+
+function setUp(): GameState {
+  const state = newGame()
+  for (const id of ['rice', 'shrimpSalt', 'kumquat', 'pack']) assert.equal(purchase(state, id).ok, true)
+  return state
+}
+
+function start(state: GameState, random = first): void {
+  assert.equal(openShop(state).ok, true)
+  tick(state, 901, random)
+}
+
+function gather(state: GameState, items: IngredientId[]): void {
+  for (const id of items) assert.equal(addIngredient(state, id).ok, true, id)
+}
+
+function mix(state: GameState): void {
+  assert.equal(toggleMix(state).ok, true)
+  tick(state, mixDuration(state), first)
+  assert.equal(mixProgress(state), 100)
+}
+
+function serve(state: GameState): void {
+  assert.equal(finishMix(state).ok, true)
+  assert.equal(packBowl(state, 'bag').ok, true)
+  assert.equal(deliver(state).ok, true)
+}
+
+test('the salt menu only needs four ingredients, and sells a correctly finished bowl at five stars', () => {
+  const state = newGame()
+  assert.equal(openShop(state).ok, false)
+  assert.equal(purchase(state, 'egg').ok, false)
+  assert.equal(toggleDish(state, 'salt').ok, true)
+  assert.equal(openShop(state).ok, false)
+
+  const supplied = setUp()
+  assert.equal(supplied.cash, 105000)
+  assert.equal(supplied.inventory.oil, 0)
+  assert.equal(toggleDish(supplied, 'classic').ok, true)
+  assert.equal(openShop(supplied).ok, false)
+  assert.equal(toggleDish(supplied, 'classic').ok, true)
+  start(supplied)
+  const customer = currentCustomer(supplied)!
+  assert.equal(customer.order.dish, 'salt')
+  assert.deepEqual(customer.order.recipe, { rice: 1, kumquat: 1, shrimpSalt: 1, pack: 1 })
+  gather(supplied, ['rice', 'kumquat', 'shrimpSalt'])
+  assert.equal(packBowl(supplied, 'bag').ok, false)
+  assert.equal(deliver(supplied).ok, false)
+  assert.equal(supplied.cash, 105000)
+  mix(supplied)
+  serve(supplied)
+  assert.equal(supplied.cash, 113000)
+  assert.equal(deliver(supplied).ok, false)
+  assert.equal(supplied.cash, 113000)
+  assert.equal(supplied.reviews[0].stars, 5)
+  assert.equal(supplied.reputation, 4)
+  assert.equal(supplied.tally.used, 3250)
+  assert.equal(supplied.inventory.rice, 9)
+  assert.equal(supplied.inventory.pack, 19)
+  assert.equal(supplied.tally.sales.salt?.revenue, 8000)
+})
+
+test('the price change uses integer steps and the demand thresholds are strict', () => {
+  const state = setUp()
+  assert.equal(defaultPrice('salt'), 8000)
+  assert.equal(money(245500), '245.500đ')
+  assert.equal(money(-0), '0đ')
+  assert.equal(changePrice(state, 'salt', 1).ok, true)
+  assert.equal(state.menu.salt.price, 9000)
+  assert.equal(priceBand('salt', 3899), 'low')
+  assert.equal(priceBand('salt', 3900), 'fair')
+  assert.equal(priceBand('salt', fairPrice('salt') * 1.35), 'fair')
+  assert.equal(priceBand('salt', 11000), 'high')
+
+  const busy = setUp()
+  busy.menu.salt.price = 3000
+  start(busy)
+  start(state)
+  assert.ok(busy.shift!.nextArrivalMs < state.shift!.nextArrivalMs)
+})
+
+test('all four heat levels match the order and without chili no dose is deducted', () => {
+  for (const heat of [0, 1, 2, 3] as Heat[]) {
+    const state = setUp()
+    purchase(state, 'wet')
+    purchase(state, 'greens')
+    toggleDish(state, 'salt')
+    toggleDish(state, 'classic')
+    start(state, () => (heat + .1) / 4)
+    const order = currentCustomer(state)!.order
+    assert.equal(order.heat, heat)
+    gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+    assert.equal(addHeat(state, heat).ok, true)
+    gather(state, ['oil'])
+    mix(state)
+    for (const id of ['mango', 'cilantro'] as const) {
+      gather(state, Array.from({ length: order.recipe[id] ?? 0 }, () => id))
+    }
+    serve(state)
+    assert.equal(state.inventory.chili, heat ? 19 : 20)
+    assert.equal(state.reviews[0].stars, 5)
+  }
+})
+
+test('remembers no rau răm and double mango and detects ignored notes or soggy peanuts', () => {
+  const state = setUp()
+  state.level = 2
+  for (const id of ['wet', 'greens', 'egg', 'crunch']) purchase(state, id)
+  toggleDish(state, 'salt')
+  toggleDish(state, 'eggs')
+  start(state)
+  const order = currentCustomer(state)!.order
+  assert.equal(order.noCilantro, true)
+  assert.equal(order.extraMango, true)
+  assert.equal(order.recipe.cilantro, undefined)
+  assert.equal(order.recipe.mango, 2)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt', 'oil', 'peanut'])
+  mix(state)
+  gather(state, ['mango', 'cilantro', 'egg'])
+  serve(state)
+  assert.equal(state.reviews[0].stars, 1)
+  assert.match(state.reviews[0].text, /rau răm|giòn bị ỉu/)
+  assert.equal(state.inventory.peanut, 9)
+})
+
+test('rejects stockouts, protects the current order, and accounts for a timed-out draft', () => {
+  const state = setUp()
+  start(state)
+  const firstId = currentCustomer(state)!.id
+  gather(state, ['rice'])
+  assert.equal(addIngredient(state, 'cilantro').ok, false)
+  tick(state, 12000, first)
+  const second = state.shift!.queue[1]
+  assert.equal(selectCustomer(state, second.id).ok, false)
+  tick(state, PATIENCE_MS - 12000, first)
+  assert.equal(state.shift?.queue.some(guest => guest.id === firstId), false)
+  assert.equal(state.shift?.activeId, second.id)
+  assert.equal(state.tally.lost, 1)
+  assert.equal(state.tally.waste, 2000)
+  assert.equal(state.reviews[0].stars, 1)
+  assert.equal(state.reviews[0].departureReason, 'timeout')
+
+  state.inventory.rice = 0
+  const count = state.nextCustomerId
+  tick(state, 15000, first)
+  assert.equal(state.nextCustomerId, count)
+})
+
+test('price refusals and overpriced purchases create actionable reviews and a reply is counted once', () => {
+  const refusal = setUp()
+  refusal.menu.salt.price = 16000
+  start(refusal)
+  assert.equal(refusal.tally.lost, 1)
+  assert.match(refusal.reviews[0].text, /Chát quá/)
+  assert.equal(refusal.reviews[0].departureReason, 'priceRefusal')
+  assert.match(departureLine(refusal.reviews[0]), /ví/)
+  assert.deepEqual(parseSave(JSON.stringify(refusal)), refusal)
+  const customerId = refusal.reviews[0].customerId
+  assert.equal(replyToReview(refusal, customerId, 'voucher').ok, true)
+  assert.equal(refusal.reputation, 1)
+  assert.equal(replyToReview(refusal, customerId, 'polite').ok, false)
+  assert.equal(refusal.reputation, 1)
+
+  const sale = setUp()
+  sale.menu.salt.price = 16000
+  start(sale, () => .9)
+  gather(sale, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(sale)
+  serve(sale)
+  assert.equal(sale.reviews[0].stars, 2)
+  assert.match(sale.reviews[0].text, /Giá hơi chát|giá|hóa đơn|giá nhỉnh/i)
+})
+
+test('purchases, use, waste, spoilage, tax and cash reconcile across days and weekly totals', () => {
+  const state = setUp()
+  purchase(state, 'greens')
+  start(state)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(state)
+  serve(state)
+  tick(state, 12000, first)
+  gather(state, ['rice'])
+  assert.equal(trashBowl(state).ok, true)
+  assert.equal(trashBowl(state).ok, false)
+  tick(state, SHIFT_MS, first)
+  const firstReport = state.reports[0]
+  assert.equal(firstReport.revenue, 8000)
+  assert.equal(firstReport.used, 3250)
+  assert.equal(firstReport.spoilage, 3000)
+  assert.equal(firstReport.waste, 2000)
+  assert.equal(firstReport.tax, 240)
+  assert.equal(firstReport.cash, 87760)
+  assert.equal(firstReport.cashDelta, -62240)
+  assert.equal(firstReport.profit, -15490)
+  assert.equal(state.inventory.mango, 7)
+  assert.equal(state.inventory.cilantro, 7)
+  assert.equal(closeShop(state), false)
+  assert.equal(state.cash, 87760)
+
+  nextDay(state)
+  start(state)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(state)
+  serve(state)
+  closeShop(state)
+  assert.equal(state.reports[1].purchases, 0)
+  const week = sumReports(state.reports)!
+  assert.equal(week.sold, 2)
+  assert.equal(week.sales.salt?.count, 2)
+  assert.equal(week.revenue, 16000)
+  assert.equal(week.tax, 480)
+  assert.equal(week.cashDelta, state.cash - 150000)
+})
+
+test('reputation unlocks four levels, staff and the alternate packaging', () => {
+  const state = newGame()
+  for (const [quantity, nextLevel, cost] of [[10, 2, 15000], [20, 3, 25000], [20, 3, 35000], [10, 4, 35000]]) {
+    for (const id of ['rice', 'shrimpSalt', 'kumquat', 'pack'] as const) {
+      while (state.inventory[id] < quantity) assert.equal(purchase(state, id).ok, true)
+    }
+    start(state)
+    for (let order = 0; order < quantity; order++) {
+      if (order > 0) tick(state, state.shift!.nextArrivalMs - state.shift!.elapsedMs + 1, first)
+      gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+      mix(state)
+      serve(state)
+    }
+    assert.equal(closeShop(state), true)
+    assert.equal(state.reports.at(-1)?.overhead, cost)
+    nextDay(state)
+    assert.equal(state.level, nextLevel)
+  }
+  for (const id of ['rice', 'shrimpSalt', 'kumquat', 'pack'] as const) {
+    if (!state.inventory[id]) assert.equal(purchase(state, id).ok, true)
+  }
+  assert.equal(purchase(state, 'squid').ok, true)
+  assert.equal(toggleStaff(state).ok, true)
+  assert.equal(mixDuration(state), 1600)
+  start(state)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(state)
+  assert.equal(finishMix(state).ok, true)
+  const packs = state.inventory.pack
+  assert.equal(packBowl(state, 'box').ok, true)
+  assert.equal(packBowl(state, 'bag').ok, true)
+  assert.equal(state.inventory.pack, packs - 1)
+  deliver(state)
+  closeShop(state)
+  assert.equal(state.reports.at(-1)?.wages, 20000)
+  assert.equal(state.reports.at(-1)?.overhead, 50000)
+})
+
+test('persists a partial mix and the settled report without regenerating customers or charging again', () => {
+  const state = setUp()
+  start(state)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  toggleMix(state)
+  tick(state, 900, first)
+  const restored = parseSave(JSON.stringify(state))!
+  assert.deepEqual(restored, state)
+  tick(restored, 1500, first)
+  assert.equal(mixProgress(restored), 100)
+  serve(restored)
+  closeShop(restored)
+  const report = parseSave(JSON.stringify(restored))!
+  assert.deepEqual(report, restored)
+  assert.equal(closeShop(report), false)
+  assert.equal(report.reports.length, 1)
+  assert.equal(parseSave('{oops'), null)
+  assert.equal(parseSave(JSON.stringify({ ...state, inventory: {} })), null)
+})
+
+test('every actual order is priced using its menu and contains only registered ingredients', () => {
+  const state = newGame()
+  for (const id of Object.keys(state.menu) as Array<keyof GameState['menu']>) {
+    const order = makeOrder(state, id, () => .5)
+    assert.equal(order.price, defaultPrice(id))
+    assert.ok(priceOf(order.recipe) > 0)
+    assert.ok(Object.keys(order.recipe).every(id => ingredientIds.some(known => known === id)))
+  }
+})
+
+test('the first lesson retains its place in a save and waits without running down the shift', () => {
+  const state = newGame()
+  state.tutorialStep = 0
+  assert.equal(lessonAllows(state, 'buy', 'kumquat'), false)
+  for (const id of ['rice', 'shrimpSalt', 'kumquat', 'pack']) {
+    assert.equal(lessonAllows(state, 'buy', id), true)
+    assert.equal(purchase(state, id).ok, true)
+    advanceTutorial(state, 'buy', id)
+  }
+  advanceTutorial(state, 'prep-menu')
+  assert.equal(openShop(state).ok, true)
+  advanceTutorial(state, 'open')
+  tick(state, SHIFT_MS, first)
+  const customer = currentCustomer(state)!
+  const arrival = state.shift!.elapsedMs
+  assert.equal(lessonAllows(state, 'customer', String(customer.id)), true)
+  advanceTutorial(state, 'customer', String(customer.id))
+  tick(state, SHIFT_MS, first)
+  assert.equal(state.shift!.elapsedMs, arrival)
+  assert.equal(state.shift!.queue.length, 1)
+  assert.equal(state.reviews.length, 0)
+  for (const id of ['rice', 'kumquat', 'shrimpSalt'] as const) {
+    gather(state, [id])
+    advanceTutorial(state, 'ingredient', id)
+  }
+  toggleMix(state)
+  advanceTutorial(state, 'mix')
+  tick(state, 800, first)
+  const resumed = parseSave(JSON.stringify(state))!
+  assert.equal(currentLesson(resumed)?.action, 'mix-ready')
+  tick(resumed, 1600, first)
+  assert.equal(currentLesson(resumed)?.action, 'final-mix')
+  finishMix(resumed)
+  advanceTutorial(resumed, 'final-mix')
+  packBowl(resumed, 'bag')
+  advanceTutorial(resumed, 'pack', 'bag')
+  deliver(resumed)
+  assert.equal(advanceTutorial(resumed, 'deliver'), true)
+  assert.equal(resumed.reviews[0].stars, 5)
+  assert.equal(currentLesson(resumed), undefined)
+  tick(resumed, 1000, first)
+  assert.equal(resumed.shift!.elapsedMs, arrival + 1000)
+  assert.equal(currentLesson(parseSave(JSON.stringify(newGame()))), undefined)
+})
+
+test('an early close records the actual hour, writes off the active bowl, and settles once', () => {
+  const state = setUp()
+  start(state)
+  gather(state, ['rice'])
+  for (let i = 0; i < 3; i++) tick(state, 20000, first)
+  assert.equal(closeShop(state), true)
+  const report = state.reports[0]
+  assert.equal(report.closedAt, 677)
+  assert.equal(report.waste, 2000)
+  assert.equal(report.lost, 3)
+  assert.equal(report.overhead, 15000)
+  const resumed = parseSave(JSON.stringify(state))!
+  assert.equal(resumed.reports[0].closedAt, report.closedAt)
+  assert.equal(closeShop(resumed), false)
+  assert.equal(resumed.cash, state.cash)
+
+  const scheduled = setUp()
+  start(scheduled)
+  tick(scheduled, SHIFT_MS, first)
+  assert.equal(scheduled.reports[0].closedAt, CLOSE_MINUTE)
+})
+
+test('correct orders get varied praise when the same customer profile returns', () => {
+  const state = setUp()
+  start(state)
+  for (let i = 0; i < 9; i++) {
+    if (i > 0) tick(state, state.shift!.nextArrivalMs - state.shift!.elapsedMs + 1, first)
+    gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+    mix(state)
+    serve(state)
+  }
+  assert.ok(state.reviews.every(review => review.stars === 5))
+  assert.equal(new Set(state.reviews.slice(0, 8).map(review => review.text)).size, 8)
+  assert.notEqual(state.reviews[7].text, state.reviews[8].text)
+})
+
+test('a negative review identifies missing ingredients and uses Cô Sáu’s voice', () => {
+  const state = setUp()
+  start(state, () => .99)
+  gather(state, ['rice', 'kumquat'])
+  mix(state)
+  serve(state)
+  assert.equal(state.reviews[0].stars, 4)
+  assert.match(state.reviews[0].text, /Phần cô thiếu muối tôm/)
+})
+
+test('the selected order’s tray and mixing highlights follow the bowl’s progress', () => {
+  const state = setUp()
+  purchase(state, 'wet')
+  purchase(state, 'greens')
+  toggleDish(state, 'salt')
+  toggleDish(state, 'classic')
+  start(state)
+  const random = [.6, 0, 0]
+  currentCustomer(state)!.order = makeOrder(state, 'classic', () => random.shift()!)
+  const render = () => renderApp(state, {
+    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), orderDetailId: currentCustomer(state)?.id ?? null, modal: null,
+    heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+  })
+  const cue = (action: string) => new RegExp('suggested-action" data-action="' + action + '"')
+  assert.match(render(), /class="tray rice needed"/)
+  assert.match(render(), /class="tray mango needed"/)
+  assert.doesNotMatch(render(), /class="tray cilantro needed"/)
+  assert.doesNotMatch(render(), cue('mix'))
+
+  gather(state, ['rice', 'kumquat', 'shrimpSalt', 'oil'])
+  assert.doesNotMatch(render(), cue('mix'))
+  assert.equal(addHeat(state, 2).ok, true)
+  assert.doesNotMatch(render(), /class="tray rice needed"/)
+  assert.match(render(), /Bánh tráng, 1\/1 phần, đã đủ/)
+  assert.match(render(), cue('mix'))
+  mix(state)
+  assert.match(render(), /suggested-bank/)
+  assert.match(render(), /Thêm topping ↓/)
+  assert.doesNotMatch(render(), cue('final-mix'))
+
+  gather(state, ['mango'])
+  assert.match(render(), /class="tray mango needed"/)
+  assert.doesNotMatch(render(), cue('final-mix'))
+  gather(state, ['mango'])
+  assert.doesNotMatch(render(), /class="tray mango needed"|suggested-bank/)
+  assert.match(render(), /Xoài xanh, 2\/2 phần, đã đủ/)
+  assert.match(render(), cue('final-mix'))
+  assert.equal(finishMix(state).ok, true)
+  assert.doesNotMatch(render(), cue('final-mix'))
+})
+
+test('a topping-free order suggests the light mix immediately after the first mix', () => {
+  const state = setUp()
+  start(state)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(state)
+  const html = renderApp(state, {
+    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), orderDetailId: currentCustomer(state)?.id ?? null, modal: null,
+    heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+  })
+  assert.match(html, /suggested-action" data-action="final-mix"/)
+  assert.doesNotMatch(html, /suggested-bank|Thêm topping ↓/)
+})
+
+test('a legacy save credits unpaid sales once and leaves settled days intact', () => {
+  const state = setUp()
+  start(state)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(state)
+  serve(state)
+
+  // In the old save, the sale belonged to the tally but had yet to reach the register.
+  const legacy = { ...state, version: 1, cash: 105000 }
+  const migrated = parseSave(JSON.stringify(legacy))!
+  assert.deepEqual(migrated, state)
+  assert.equal(migrated.cash, 113000)
+  assert.deepEqual(parseSave(JSON.stringify(migrated)), migrated)
+
+  assert.equal(closeShop(migrated), true)
+  assert.equal(migrated.cash, 97760)
+  assert.equal(migrated.reports[0].revenue, 8000)
+  assert.equal(migrated.reports[0].tax, 240)
+  assert.deepEqual(parseSave(JSON.stringify({ ...migrated, version: 1 })), migrated)
+})

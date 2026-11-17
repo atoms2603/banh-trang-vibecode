@@ -1,0 +1,23 @@
+{
+  "name": "tiem-banh-trang-tron-nho",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build --base ./",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@fontsource-variable/nunito": "^5.2.0",
+    "@fontsource-variable/quicksand": "^5.2.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^7.2.2"
+  }
+}
