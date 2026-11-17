@@ -26,11 +26,11 @@ function emptyBowl(): Bowl {
   return { ingredients: {}, heat: 0, mixMs: 0, mixing: false, finalMixed: false, pack: null, sequenceErrors: 0, soggy: false }
 }
 
-export function newGame(): GameState {
+export function newGame(guided = false): GameState {
   return {
-    version: 2, phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
+    version: 3, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
     inventory: Object.fromEntries(ingredientIds.map(id => [id, 0])) as Inventory,
-    menu: Object.fromEntries(menuIds.map(id => [id, { enabled: id === 'salt', price: defaultPrice(id) }])) as GameState['menu'],
+    menu: Object.fromEntries(menuIds.map(id => [id, { enabled: !guided && id === 'salt', price: defaultPrice(id) }])) as GameState['menu'],
     reviews: [], reports: [], staff: false, muted: false, nextCustomerId: 1,
     tally: emptyTally(), shift: null,
   }

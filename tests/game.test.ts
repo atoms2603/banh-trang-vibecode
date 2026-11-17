@@ -297,8 +297,8 @@ test('every actual order is priced using its menu and contains only registered i
 })
 
 test('the first lesson retains its place in a save and waits without running down the shift', () => {
-  const state = newGame()
-  state.tutorialStep = 0
+  let state = newGame(true)
+  assert.equal(state.menu.salt.enabled, false)
   assert.equal(lessonAllows(state, 'buy', 'kumquat'), false)
   for (const id of ['rice', 'shrimpSalt', 'kumquat', 'pack']) {
     assert.equal(lessonAllows(state, 'buy', id), true)
@@ -306,6 +306,23 @@ test('the first lesson retains its place in a save and waits without running dow
     advanceTutorial(state, 'buy', id)
   }
   advanceTutorial(state, 'prep-menu')
+  assert.equal(lessonAllows(state, 'open'), false)
+  assert.equal(lessonAllows(state, 'toggle-dish', 'salt'), true)
+  assert.equal(toggleDish(state, 'salt').ok, true)
+  advanceTutorial(state, 'toggle-dish', 'salt')
+  state = parseSave(JSON.stringify(state))!
+  assert.equal(currentLesson(state)?.prepTab, 'menu')
+  assert.equal(lessonAllows(state, 'price-down', 'salt'), true)
+  assert.equal(lessonAllows(state, 'price-up', 'salt'), true)
+  assert.equal(lessonAllows(state, 'price-up', 'classic'), false)
+  assert.equal(lessonAllows(state, 'open'), false)
+  assert.equal(changePrice(state, 'salt', 1).ok, true)
+  advanceTutorial(state, 'price-up', 'salt')
+  assert.equal(currentLesson(state)?.action, 'open')
+  assert.equal(lessonAllows(state, 'price-down', 'salt'), true)
+  assert.equal(changePrice(state, 'salt', -1).ok, true)
+  advanceTutorial(state, 'price-down', 'salt')
+  assert.equal(currentLesson(state)?.action, 'open')
   assert.equal(openShop(state).ok, true)
   advanceTutorial(state, 'open')
   tick(state, SHIFT_MS, first)
@@ -339,6 +356,29 @@ test('the first lesson retains its place in a save and waits without running dow
   tick(resumed, 1000, first)
   assert.equal(resumed.shift!.elapsedMs, arrival + 1000)
   assert.equal(currentLesson(parseSave(JSON.stringify(newGame()))), undefined)
+})
+
+test('legacy day-one saves keep their existing menu and tutorial progress', () => {
+  const state = setUp()
+  assert.equal(changePrice(state, 'salt', 1).ok, true)
+  const beforeMenu = parseSave(JSON.stringify({ ...state, version: 2, tutorialStep: 4 }))!
+  assert.equal(currentLesson(beforeMenu)?.action, 'prep-menu')
+  advanceTutorial(beforeMenu, 'prep-menu')
+  assert.equal(currentLesson(beforeMenu)?.action, 'price')
+  assert.deepEqual(beforeMenu.menu, state.menu)
+
+  const readyToOpen = parseSave(JSON.stringify({ ...state, version: 2, tutorialStep: 5 }))!
+  assert.equal(currentLesson(readyToOpen)?.action, 'open')
+  assert.deepEqual(readyToOpen.menu, state.menu)
+
+  start(state)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  toggleMix(state)
+  tick(state, 800, first)
+  const mixing = parseSave(JSON.stringify({ ...state, version: 2, tutorialStep: 11 }))!
+  assert.equal(currentLesson(mixing)?.action, 'mix-ready')
+  assert.deepEqual(mixing.shift, state.shift)
+  assert.equal(mixing.cash, state.cash)
 })
 
 test('an early close records the actual hour, writes off the active bowl, and settles once', () => {

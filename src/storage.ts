@@ -1,7 +1,7 @@
 import { ingredientIds, menuIds, profiles } from './data.ts'
 import { salesRevenue } from './economy.ts'
 import { CLOSE_MINUTE, OPEN_MINUTE, SHIFT_MS } from './game.ts'
-import { validTutorialStep } from './tutorial.ts'
+import { upgradeTutorialStep, validTutorialStep } from './tutorial.ts'
 import type { GameState } from './types.ts'
 
 export const SAVE_KEY = 'tiem-banh-trang-tron-nho-v1'
@@ -52,10 +52,11 @@ function validShift(value: unknown): boolean {
     && integer(bowl.sequenceErrors) && (bowl.pack === null || bowl.pack === 'bag' || bowl.pack === 'box')
 }
 
-type SavedGame = GameState | (Omit<GameState, 'version'> & { version: 1 })
+type SavedGame = GameState | (Omit<GameState, 'version'> & { version: 1 | 2 })
 
 function validSave(value: unknown): value is SavedGame {
-  if (!object(value) || (value.version !== 1 && value.version !== 2) || !validTutorialStep(value.tutorialStep) || !integer(value.day, 1) || !integer(value.level, 1, 4)
+  if (!object(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3)
+    || !validTutorialStep(value.tutorialStep, value.version !== 3) || !integer(value.day, 1) || !integer(value.level, 1, 4)
     || !integer(value.cash, Number.MIN_SAFE_INTEGER) || !integer(value.reputation) || !integer(value.nextCustomerId, 1)
     || typeof value.staff !== 'boolean' || typeof value.muted !== 'boolean' || !tally(value.tally)) return false
   const { inventory, menu, phase, shift, reviews, reports } = value
@@ -78,10 +79,12 @@ export function parseSave(raw: string): GameState | null {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!validSave(parsed)) return null
-    if (parsed.version === 2) return parsed
+    if (parsed.version === 3) return parsed
     // Older builds credited sales when the day closed. Only open shifts have unpaid sales.
-    const pendingRevenue = parsed.phase === 'shop' ? salesRevenue(parsed.tally) : 0
-    return { ...parsed, version: 2, cash: parsed.cash + pendingRevenue }
+    const pendingRevenue = parsed.version === 1 && parsed.phase === 'shop' ? salesRevenue(parsed.tally) : 0
+    const upgraded: GameState = { ...parsed, version: 3, cash: parsed.cash + pendingRevenue }
+    if (parsed.tutorialStep !== undefined) upgraded.tutorialStep = upgradeTutorialStep(parsed.tutorialStep)
+    return upgraded
   } catch {
     return null
   }

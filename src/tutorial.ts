@@ -3,16 +3,22 @@ import type { GameState } from './types.ts'
 interface Lesson {
   action: string
   id?: string
+  prepTab?: 'menu'
   instruction: string
 }
+
+const menuLessonCount = 2
+const legacyOpenStep = 5
 
 const lessons: readonly Lesson[] = [
   { action: 'buy', id: 'rice', instruction: 'Nhập một bịch bánh tráng cắt sợi.' },
   { action: 'buy', id: 'shrimpSalt', instruction: 'Nhập muối tôm Tây Ninh để nêm bánh.' },
   { action: 'buy', id: 'kumquat', instruction: 'Nhập tắc tươi. Nước cốt tắc giúp bánh mềm hơn.' },
   { action: 'buy', id: 'pack', instruction: 'Nhập bộ đóng gói kèm đũa tre.' },
-  { action: 'prep-menu', instruction: 'Mở Menu hôm nay để xem món muối tắc đang bật.' },
-  { action: 'open', instruction: 'Bánh tráng muối tắc đã sẵn sàng bán. Hãy mở cửa tiệm!' },
+  { action: 'prep-menu', instruction: 'Mở Menu hôm nay để chuẩn bị món đầu tiên.' },
+  { action: 'toggle-dish', id: 'salt', prepTab: 'menu', instruction: 'Bật công tắc Bánh tráng muối tắc để khách có thể gọi món.' },
+  { action: 'price', id: 'salt', prepTab: 'menu', instruction: 'Bấm − hoặc + để chỉnh giá Bánh tráng muối tắc. Mỗi nấc là 1.000đ.' },
+  { action: 'open', prepTab: 'menu', instruction: 'Bạn có thể chỉnh thêm giá. Khi đã sẵn sàng, bấm Mở cửa bán hàng!' },
   { action: 'customer', instruction: 'Chọn vị khách đầu tiên để đọc đơn.' },
   { action: 'ingredient', id: 'rice', instruction: 'Chạm hoặc kéo bánh tráng vào thau.' },
   { action: 'ingredient', id: 'kumquat', instruction: 'Vắt tắc vào thau để làm mềm bánh.' },
@@ -24,8 +30,13 @@ const lessons: readonly Lesson[] = [
   { action: 'deliver', instruction: 'Bấm Giao món để phục vụ vị khách đầu tiên.' },
 ]
 
-export function validTutorialStep(value: unknown): boolean {
-  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < lessons.length)
+export function validTutorialStep(value: unknown, legacy: boolean): boolean {
+  const count = lessons.length - (legacy ? menuLessonCount : 0)
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < count)
+}
+
+export function upgradeTutorialStep(step: number): number {
+  return step >= legacyOpenStep ? step + menuLessonCount : step
 }
 
 export function currentLesson(state: GameState | null) {
@@ -45,16 +56,20 @@ export function currentLesson(state: GameState | null) {
 
 export function lessonAllows(state: GameState | null, action: string, id?: string): boolean {
   const lesson = currentLesson(state)
-  return !lesson || (lesson.action === action && lesson.id === id)
+  if (!lesson || (lesson.action === action && lesson.id === id)) return true
+  return (lesson.action === 'price' || lesson.action === 'open') && id === 'salt'
+    && (action === 'price-down' || action === 'price-up')
 }
 
 export function advanceTutorial(state: GameState, action: string, id?: string): boolean {
   const lesson = currentLesson(state)
-  if (!lesson || !lessonAllows(state, action, id)) return false
+  if (!lesson || !lessonAllows(state, action, id) || (lesson.action === 'open' && action !== 'open')) return false
   if (lesson.step + 1 === lesson.total) {
     delete state.tutorialStep
     return true
   }
-  state.tutorialStep = lesson.step + 1
+  // Older saves can reach the menu with the starter dish already enabled.
+  const alreadyEnabled = lesson.action === 'prep-menu' && state.menu.salt.enabled
+  state.tutorialStep = lesson.step + (alreadyEnabled ? 2 : 1)
   return false
 }

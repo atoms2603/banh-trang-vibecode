@@ -122,7 +122,7 @@ export interface DailyReport extends DayTally {
 }
 
 export interface GameState {
-  version: 2
+  version: 3
   tutorialStep?: number
   phase: Stage
   day: number

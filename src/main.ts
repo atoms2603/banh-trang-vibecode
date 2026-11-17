@@ -109,6 +109,11 @@ function positionTutorial(): void {
   tip.style.top = Math.max(8, Math.min(top, window.innerHeight - tipRect.height - 8)) + 'px'
 }
 
+function actionOf(button: HTMLButtonElement): string | undefined {
+  const action = button.dataset.action
+  return action === 'select-order' ? 'customer' : action
+}
+
 function renderTutorial(): void {
   const lesson = !options.home && !options.modal ? currentLesson(state) : undefined
   spotlight.hidden = true
@@ -119,38 +124,42 @@ function renderTutorial(): void {
   }
   const controls = Array.from(screen.querySelectorAll<HTMLButtonElement>('button[data-action]'))
   const button = controls.find(control => control.dataset.action === lesson.action && control.dataset.id === lesson.id)
-  const sticker = lesson.action === 'customer'
-    ? controls.find(control => control.dataset.action === 'select-order' && control.dataset.id === lesson.id)
-    : undefined
+  const allowed = controls.filter(control => {
+    const action = actionOf(control)
+    return action !== undefined && lessonAllows(state, action, control.dataset.id)
+  })
   const entrance = button?.matches('.customer-figure.arriving')
     ? button.getAnimations({ subtree: true }).filter(animation =>
       (animation.pending || animation.playState === 'running')
       && Number.isFinite(animation.effect?.getComputedTiming().endTime))
     : []
-  for (const control of controls) control.inert = (control !== button && control !== sticker) || entrance.length > 0
+  for (const control of controls) control.inert = !allowed.includes(control) || entrance.length > 0
   for (const summary of screen.querySelectorAll('summary')) summary.inert = true
 
   // The customer card still moves during its entrance, so its bounds are not ready yet.
-  const target = button ?? (lesson.action === 'mix-ready' ? screen.querySelector<HTMLElement>('.mix-meter') : null)
+  const priceStepper = lesson.action === 'price' ? screen.querySelector<HTMLElement>(`[data-price-for="${lesson.id}"]`) : null
+  const target = button ?? priceStepper ?? (lesson.action === 'mix-ready' ? screen.querySelector<HTMLElement>('.mix-meter') : null)
   if (!target) return
 
   const reveal = () => {
     if (!target.isConnected) return
-    if (button) button.inert = false
-    else target.tabIndex = -1
-    if (sticker) sticker.inert = false
+    for (const control of allowed) control.inert = false
+    const focusTarget = priceStepper?.querySelector<HTMLButtonElement>('[data-action="price-up"]') ?? target
+    if (!button && !priceStepper) target.tabIndex = -1
     tutorialTarget = target
-    target.setAttribute('aria-describedby', instruction.id)
+    focusTarget.setAttribute('aria-describedby', instruction.id)
+    if (priceStepper) for (const control of allowed) control.setAttribute('aria-describedby', instruction.id)
     const label = 'Hướng dẫn ngày 1 · ' + (lesson.step + 1) + '/' + lesson.total
     if (stepLabel.textContent !== label) stepLabel.textContent = label
     if (instruction.textContent !== lesson.instruction) instruction.textContent = lesson.instruction
     spotlight.hidden = false
     const key = lesson.step + ':' + (lesson.id ?? '')
-    if (key !== tutorialKey) {
+    const stepChanged = key !== tutorialKey
+    if (stepChanged) {
       target.scrollIntoView({ block: 'center', inline: 'nearest' })
       tutorialKey = key
     }
-    target.focus({ preventScroll: true })
+    if (stepChanged || !allowed.some(control => control === document.activeElement)) focusTarget.focus({ preventScroll: true })
     positionTutorial()
   }
 
@@ -234,8 +243,7 @@ function showModal(name: Modal): void {
 
 function beginGame(): void {
   const keepMuted = muted()
-  state = newGame()
-  state.tutorialStep = 0
+  state = newGame(true)
   state.muted = keepMuted
   options.home = false
   options.prepTab = 'market'
@@ -337,7 +345,7 @@ function showReport(game: GameState): void {
 
 function handle(button: HTMLButtonElement): void {
   const { action: buttonAction, id, value } = button.dataset
-  const action = buttonAction === 'select-order' ? 'customer' : buttonAction
+  const action = actionOf(button)
   if (!action || action === 'brand' || (!options.home && !lessonAllows(state, action, id))) return
   if (action !== 'mute' && action !== 'deliver') sound(action === 'mix' ? 'mix' : 'tap', muted())
   if (action === 'new') {
@@ -370,7 +378,7 @@ function handle(button: HTMLButtonElement): void {
     lastFrame = performance.now()
     persist()
     if (!options.home && state.phase === 'report') options.reportDay = state.day
-    if (!options.home && currentLesson(state)?.action === 'open') options.prepTab = 'menu'
+    if (!options.home && currentLesson(state)?.prepTab === 'menu') options.prepTab = 'menu'
     renderScreen(true)
     return
   }

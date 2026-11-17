@@ -85,12 +85,13 @@ function statusStrip(state: GameState, shop: boolean): string {
 }
 
 function marketScreen(state: GameState): string {
-  const needed = ingredientIds.filter(id => enabledDishes(state).some(dish => (menu[dish].recipe[id] ?? 0) > state.inventory[id]))
+  const dishes: MenuId[] = state.day === 1 && state.tutorialStep !== undefined ? ['salt'] : enabledDishes(state)
+  const needed = ingredientIds.filter(id => dishes.some(dish => (menu[dish].recipe[id] ?? 0) > state.inventory[id]))
   const available = market.filter(pack => marketUnlocked(state, pack.items))
   const locked = market.filter(pack => !marketUnlocked(state, pack.items))
   return `<section aria-label="Chợ sáng">
     ${needed.length ? `<div class="market-tip">${icon('basket', 19)}<div><strong>Cần nhập cho menu</strong><p>${needed.map(id => ingredients[id].short).join(' · ')}</p></div></div>` :
-      '<div class="market-tip stocked">' + icon('check', 19) + '<p>' + (enabledDishes(state).length ? 'Đã đủ hàng để mở cửa. Bạn có thể nhập thêm để bán cả ca.' : 'Bật món trong Menu hôm nay để xem gợi ý nhập hàng.') + '</p></div>'}
+      '<div class="market-tip stocked">' + icon('check', 19) + '<p>' + (dishes.length ? 'Đã đủ nguyên liệu theo menu. Bạn có thể nhập thêm để bán cả ca.' : 'Bật món trong Menu hôm nay để xem gợi ý nhập hàng.') + '</p></div>'}
     <div class="market-list">
       ${available.map(pack => {
         const first = ingredientIds.find(id => pack.items[id])!
@@ -130,7 +131,7 @@ function dishRow(state: GameState, id: MenuId): string {
     </div>
     ${locked ? '' : `<div class="dish-price"><div><small>Vốn ${money(priceOf(dish.recipe))}</small>
       <span class="price-band ${band}">${band === 'high' ? 'Giá cao' : band === 'low' ? 'Giá thấp' : 'Giá hợp lý'}</span></div>
-      <div class="price-stepper">
+      <div class="price-stepper" data-price-for="${id}">
         <button type="button" data-action="price-down" data-id="${id}" aria-label="Giảm giá ${dish.name}" ${setting.price <= 1000 ? 'disabled' : ''}>${icon('minus', 15)}</button>
         <strong>${money(setting.price)}</strong>
         <button type="button" data-action="price-up" data-id="${id}" aria-label="Tăng giá ${dish.name}">${icon('plus', 15)}</button>
