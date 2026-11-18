@@ -180,9 +180,12 @@ test('price refusals and overpriced purchases create actionable reviews and a re
   const sale = setUp()
   sale.menu.salt.price = 16000
   start(sale, () => .9)
-  gather(sale, ['rice', 'kumquat', 'shrimpSalt'])
-  mix(sale)
-  serve(sale)
+  const quantity = currentCustomer(sale)!.order.quantity
+  for (let portion = 0; portion < quantity; portion++) {
+    gather(sale, ['rice', 'kumquat', 'shrimpSalt'])
+    mix(sale)
+    serve(sale)
+  }
   assert.equal(sale.reviews[0].stars, 2)
   assert.match(sale.reviews[0].text, /Giá hơi chát|giá|hóa đơn|giá nhỉnh/i)
 })
@@ -438,9 +441,12 @@ test('correct orders get varied praise when the same customer profile returns', 
 test('a negative review identifies missing ingredients and uses Cô Sáu’s voice', () => {
   const state = setUp()
   start(state, () => .99)
-  gather(state, ['rice', 'kumquat'])
-  mix(state)
-  serve(state)
+  const quantity = currentCustomer(state)!.order.quantity
+  for (let portion = 0; portion < quantity; portion++) {
+    gather(state, ['rice', 'kumquat'])
+    mix(state)
+    serve(state)
+  }
   assert.equal(state.reviews[0].stars, 4)
   assert.match(state.reviews[0].text, /Phần cô thiếu muối tôm/)
 })
@@ -520,4 +526,148 @@ test('a legacy save credits unpaid sales once and leaves settled days intact', (
   assert.equal(migrated.reports[0].revenue, 8000)
   assert.equal(migrated.reports[0].tax, 240)
   assert.deepEqual(parseSave(JSON.stringify({ ...migrated, version: 1 })), migrated)
+})
+
+test('multi-bag arrivals are uncommon, stock-limited, and get modest extra patience', () => {
+  const quantities = [0, 0, 0]
+  for (let sample = 0; sample < 100; sample++) {
+    const state = setUp()
+    start(state, () => (sample + .5) / 100)
+    const customer = currentCustomer(state)!
+    quantities[customer.order.quantity - 1]++
+    assert.equal(customer.patienceMs, PATIENCE_MS + (customer.order.quantity - 1) * 18000)
+  }
+  assert.deepEqual(quantities, [80, 16, 4])
+
+  for (const [stock, expected] of [[1, 1], [2, 2], [3, 3]]) {
+    const state = setUp()
+    state.inventory.rice = stock
+    start(state, () => .99)
+    assert.equal(currentCustomer(state)!.order.quantity, expected)
+  }
+  const custom = setUp()
+  purchase(custom, 'wet')
+  purchase(custom, 'greens')
+  custom.inventory.mango = 2
+  toggleDish(custom, 'salt')
+  toggleDish(custom, 'classic')
+  const draws = [0, 0, 0, 0, 0, .99, 0]
+  start(custom, () => draws.shift() ?? 0)
+  assert.equal(currentCustomer(custom)!.order.recipe.mango, 2)
+  assert.equal(currentCustomer(custom)!.order.quantity, 1)
+
+  const guided = setUp()
+  guided.tutorialStep = 8
+  start(guided, () => .99)
+  assert.equal(currentCustomer(guided)!.order.quantity, 1)
+  assert.equal(currentCustomer(guided)!.patienceMs, PATIENCE_MS)
+})
+
+test('a three-bag order credits each bag, restores progress, and reviews once after completion', () => {
+  let state = setUp()
+  start(state, () => .99)
+  const customerId = currentCustomer(state)!.id
+  assert.equal(currentCustomer(state)!.order.quantity, 3)
+  for (let portion = 1; portion <= 3; portion++) {
+    gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+    mix(state)
+    serve(state)
+    assert.equal(state.cash, 105000 + portion * 8000)
+    assert.equal(state.tally.sales.salt?.count, portion)
+    assert.equal(state.inventory.rice, 10 - portion)
+    assert.equal(state.inventory.pack, 20 - portion)
+    assert.equal(deliver(state).ok, false)
+    if (portion < 3) {
+      assert.equal(currentCustomer(state)!.id, customerId)
+      assert.equal(currentCustomer(state)!.servedPortions.length, portion)
+      assert.deepEqual(state.shift!.bowl.ingredients, {})
+      assert.equal(state.reviews.length, 0)
+      assert.equal(state.reputation, 0)
+      const restored = parseSave(JSON.stringify(state))!
+      assert.deepEqual(restored, state)
+      state = restored
+    }
+  }
+  assert.equal(state.reviews.length, 1)
+  assert.equal(state.reviews[0].customerId, customerId)
+  assert.equal(state.reviews[0].stars, 5)
+  assert.equal(state.reputation, 4)
+  assert.equal(state.shift!.queue.some(guest => guest.id === customerId), false)
+  closeShop(state)
+  assert.equal(state.reports[0].sold, 3)
+  assert.equal(state.reports[0].revenue, 24000)
+  assert.equal(state.reports[0].used, 9750)
+  assert.equal(state.reports[0].tax, 720)
+  assert.equal(state.reports[0].profit, -1470)
+  assert.equal(state.cash, 113280)
+})
+
+test('a group review accounts for every bag and retains feedback from the worst portion', () => {
+  const state = setUp()
+  start(state, () => .9)
+  assert.equal(currentCustomer(state)!.order.quantity, 2)
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(state)
+  serve(state)
+  gather(state, ['rice'])
+  mix(state)
+  serve(state)
+  assert.equal(state.reviews.length, 1)
+  assert.equal(state.reviews[0].stars, 4)
+  assert.match(state.reviews[0].text, /thiếu/)
+  assert.equal(state.reputation, 3)
+})
+
+test('partial group orders retain paid sales and waste only the unfinished bowl on departure', () => {
+  for (const reason of ['timeout', 'closed']) {
+    let state = setUp()
+    start(state, () => .99)
+    const customer = currentCustomer(state)!
+    state.shift!.nextArrivalMs = SHIFT_MS
+    gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+    mix(state)
+    serve(state)
+    gather(state, ['rice'])
+    toggleMix(state)
+    tick(state, 800, first)
+    const saved = parseSave(JSON.stringify(state))!
+    assert.deepEqual(saved, state)
+    state = saved
+    if (reason === 'timeout') tick(state, customer.patienceMs - (state.shift!.elapsedMs - customer.arrivalMs), first)
+    closeShop(state)
+    assert.equal(state.reviews.length, 1)
+    assert.equal(state.reviews[0].stars, 1)
+    assert.equal(state.reviews[0].departureReason, reason)
+    assert.equal(state.reports[0].sold, 1)
+    assert.equal(state.reports[0].lost, 1)
+    assert.equal(state.reports[0].used, 3250)
+    assert.equal(state.reports[0].waste, 2000)
+    assert.equal(state.reports[0].tax, 240)
+    assert.equal(state.cash, 97760)
+    assert.equal(closeShop(state), false)
+    assert.equal(parseSave(JSON.stringify(state))!.cash, 97760)
+  }
+})
+
+test('old single-bag saves migrate without adding sales and invalid group progress is rejected', () => {
+  const state = setUp()
+  start(state)
+  const legacy = JSON.parse(JSON.stringify(state))
+  legacy.version = 4
+  delete legacy.shift.queue[0].order.quantity
+  delete legacy.shift.queue[0].servedPortions
+  assert.deepEqual(parseSave(JSON.stringify(legacy)), state)
+
+  const guest = currentCustomer(state)!
+  for (const quantity of [0, 4]) {
+    const invalid = structuredClone(state)
+    Object.assign(invalid.shift!.queue[0].order, { quantity })
+    assert.equal(parseSave(JSON.stringify(invalid)), null)
+  }
+  guest.servedPortions.push({ stars: 5, text: 'Đã đủ đơn.' })
+  assert.equal(parseSave(JSON.stringify(state)), null)
+  guest.order.quantity = 2
+  assert.ok(parseSave(JSON.stringify(state)))
+  Object.assign(guest.servedPortions[0], { stars: 0 })
+  assert.equal(parseSave(JSON.stringify(state)), null)
 })

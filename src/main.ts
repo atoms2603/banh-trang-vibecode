@@ -489,7 +489,7 @@ function handle(button: HTMLButtonElement): void {
       if (result.ok && guest) {
         payment = { amount: guest.order.price, origin: paymentSource(guest.id) }
         sound('serve', muted())
-        announceDeparture(guest.profile, 'Đã nhận món!')
+        if (guest.servedPortions.length === guest.order.quantity) announceDeparture(guest.profile, 'Đã nhận đủ món!')
         options.heatOpen = false
       }
       break

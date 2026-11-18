@@ -36,7 +36,7 @@ function report(value: unknown): boolean {
     && ['profit', 'cashDelta', 'cash'].every(key => integer(value[key], Number.MIN_SAFE_INTEGER))
 }
 
-function validShift(value: unknown): boolean {
+function validShift(value: unknown, version: number): boolean {
   if (!object(value) || !timer(value.elapsedMs) || value.elapsedMs >= SHIFT_MS
     || !timer(value.nextArrivalMs) || !Array.isArray(value.queue) || !object(value.bowl)) return false
   const validGuests = value.queue.every(guest => object(guest) && integer(guest.id, 1)
@@ -44,6 +44,9 @@ function validShift(value: unknown): boolean {
     && timer(guest.arrivalMs) && timer(guest.patienceMs) && guest.patienceMs > 0
     && object(guest.order) && menuIds.some(id => id === (guest.order as Record<string, unknown>).dish)
     && recipe(guest.order.recipe) && integer(guest.order.price, 1000) && integer(guest.order.heat, 0, 3)
+    && (version < 5 || (integer(guest.order.quantity, 1, 3) && Array.isArray(guest.servedPortions)
+      && guest.servedPortions.length < guest.order.quantity
+      && guest.servedPortions.every(portion => object(portion) && integer(portion.stars, 1, 5) && typeof portion.text === 'string')))
     && ['noCilantro', 'extraMango', 'pricey'].every(flag => typeof (guest.order as Record<string, unknown>)[flag] === 'boolean'))
   const { bowl } = value
   return validGuests && (value.activeId === null ? value.queue.length === 0 : value.queue.some(guest => guest.id === value.activeId))
@@ -52,10 +55,10 @@ function validShift(value: unknown): boolean {
     && integer(bowl.sequenceErrors) && (bowl.pack === null || bowl.pack === 'bag' || bowl.pack === 'box')
 }
 
-type SavedGame = GameState | (Omit<GameState, 'version'> & { version: 1 | 2 | 3 })
+type SavedGame = GameState | (Omit<GameState, 'version'> & { version: 1 | 2 | 3 | 4 })
 
 function validSave(value: unknown): value is SavedGame {
-  if (!object(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4)
+  if (!object(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5)
     || !validTutorialStep(value.tutorialStep, value.version) || !integer(value.day, 1) || !integer(value.level, 1, 4)
     || !integer(value.cash, Number.MIN_SAFE_INTEGER) || !integer(value.reputation) || !integer(value.nextCustomerId, 1)
     || typeof value.staff !== 'boolean' || typeof value.muted !== 'boolean' || !tally(value.tally)) return false
@@ -71,7 +74,7 @@ function validSave(value: unknown): value is SavedGame {
       && integer(review.stars, 1, 5) && typeof review.text === 'string'
       && (review.departureReason === undefined || ['priceRefusal', 'timeout', 'closed'].some(reason => review.departureReason === reason))
       && (review.reply === undefined || ['polite', 'friendly', 'voucher'].some(id => review.reply === id)))) return false
-  if (phase === 'shop') return validShift(shift)
+  if (phase === 'shop') return validShift(shift, value.version)
   return shift === null && (phase === 'prep' || (phase === 'report' && reports.at(-1)?.day === value.day))
 }
 
@@ -79,10 +82,20 @@ export function parseSave(raw: string): GameState | null {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!validSave(parsed)) return null
-    if (parsed.version === 4) return parsed
+    if (parsed.version === 5) return parsed
     // Older builds credited sales when the day closed. Only open shifts have unpaid sales.
     const pendingRevenue = parsed.version === 1 && parsed.phase === 'shop' ? salesRevenue(parsed.tally) : 0
-    const upgraded: GameState = { ...parsed, version: 4, cash: parsed.cash + pendingRevenue }
+    const upgraded: GameState = { ...parsed, version: 5, cash: parsed.cash + pendingRevenue }
+    if (upgraded.shift) {
+      upgraded.shift = {
+        ...upgraded.shift,
+        queue: upgraded.shift.queue.map(guest => ({
+          ...guest,
+          order: { ...guest.order, quantity: 1 },
+          servedPortions: [],
+        })),
+      }
+    }
     if (parsed.tutorialStep !== undefined) upgraded.tutorialStep = upgradeTutorialStep(parsed.tutorialStep, parsed.version)
     return upgraded
   } catch {

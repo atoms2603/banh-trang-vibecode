@@ -44,6 +44,8 @@ export interface MenuSetting {
 
 export interface Order {
   dish: MenuId
+  quantity: 1 | 2 | 3
+  // Price and recipe describe one bag.
   price: number
   recipe: Recipe
   heat: Heat
@@ -58,6 +60,7 @@ export interface Customer {
   arrivalMs: number
   patienceMs: number
   order: Order
+  servedPortions: Array<{ stars: Stars; text: string }>
 }
 
 export type DepartureReason = 'priceRefusal' | 'timeout' | 'closed'
@@ -122,7 +125,7 @@ export interface DailyReport extends DayTally {
 }
 
 export interface GameState {
-  version: 4
+  version: 5
   tutorialStep?: number
   phase: Stage
   day: number

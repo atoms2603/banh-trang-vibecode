@@ -8,6 +8,7 @@ export const OPEN_MINUTE = 8 * 60
 export const CLOSE_MINUTE = 21 * 60
 export const SHIFT_MS = 240_000
 export const PATIENCE_MS = 70_000
+const EXTRA_PORTION_PATIENCE_MS = 18_000
 
 interface Result {
   ok: boolean
@@ -28,7 +29,7 @@ function emptyBowl(): Bowl {
 
 export function newGame(guided = false): GameState {
   return {
-    version: 4, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
+    version: 5, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
     inventory: Object.fromEntries(ingredientIds.map(id => [id, 0])) as Inventory,
     menu: Object.fromEntries(menuIds.map(id => [id, { enabled: !guided && id === 'salt', price: defaultPrice(id) }])) as GameState['menu'],
     reviews: [], reports: [], staff: false, muted: false, nextCustomerId: 1,
@@ -290,11 +291,18 @@ export function deliver(state: GameState): Result {
   const customer = currentCustomer(state)
   const bowl = state.shift?.bowl
   if (!customer || !bowl || !canDeliver(state)) return problem('Trộn lần đầu và đóng gói trước khi giao.')
-  const { stars, text } = assessOrder(state, customer, bowl)
+  const assessment = assessOrder(state, customer, bowl)
   const price = customer.order.price
   tallySale(state.tally, customer.order.dish, price, priceOf(bowl.ingredients))
   state.cash += price
-  recordReview(state, customer, stars, text)
+  customer.servedPortions.push(assessment)
+  if (customer.servedPortions.length < customer.order.quantity) {
+    state.shift!.bowl = emptyBowl()
+    return success(profiles[customer.profile].name + ' đã nhận ' + customer.servedPortions.length + '/' + customer.order.quantity + ' bịch. Làm tiếp bịch kế nhé!')
+  }
+  const stars = Math.round(customer.servedPortions.reduce((sum, portion) => sum + portion.stars, 0) / customer.order.quantity) as Stars
+  const feedback = customer.servedPortions.reduce((worst, portion) => portion.stars < worst.stars ? portion : worst)
+  recordReview(state, customer, stars, feedback.text)
   leaveQueue(state, customer, true)
   return success(profiles[customer.profile].name + ' đã nhận món · ' + stars + ' ★')
 }
@@ -316,7 +324,7 @@ export function makeOrder(state: GameState, dish: MenuId, random: () => number):
   if (noCilantro) delete recipe.cilantro
   if (extraMango) recipe.mango = 2
   const price = state.menu[dish].price
-  return { dish, price, recipe, heat, noCilantro, extraMango, pricey: priceBand(dish, price) === 'high' }
+  return { dish, quantity: 1, price, recipe, heat, noCilantro, extraMango, pricey: priceBand(dish, price) === 'high' }
 }
 
 function spawnCustomer(state: GameState, random: () => number): boolean {
@@ -337,6 +345,15 @@ function spawnCustomer(state: GameState, random: () => number): boolean {
     arrivalMs: shift.elapsedMs,
     patienceMs: PATIENCE_MS,
     order: makeOrder(state, dish, random),
+    servedPortions: [],
+  }
+  if (!currentLesson(state)) {
+    const roll = random()
+    const desired = roll < 0.8 ? 1 : roll < 0.96 ? 2 : 3
+    const available = Math.min(...ingredientIds.filter(id => customer.order.recipe[id])
+      .map(id => Math.floor(state.inventory[id] / customer.order.recipe[id]!)))
+    customer.order.quantity = Math.min(desired, available) as Order['quantity']
+    customer.patienceMs += (customer.order.quantity - 1) * EXTRA_PORTION_PATIENCE_MS
   }
 
   const baseInterval = [0, 10800, 9500, 8300, 7300][state.level]

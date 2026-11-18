@@ -178,10 +178,13 @@ function customerFigure(state: GameState, customer: Customer, options: ScreenOpt
   const active = state.shift?.activeId === customer.id
   const speaking = active && options.customerSpeechId === customer.id
   const person = profiles[customer.profile]
+  const quantity = customer.order.quantity
+  const served = customer.servedPortions.length
+  const line = quantity > 1 ? `Cho ${quantity} bịch nha!` : person.line
   return `<button type="button" class="customer-figure${arriving ? ' arriving' : ''}${customer.id % 2 ? '' : ' from-right'}" data-action="customer" data-id="${customer.id}"
      aria-label="${person.name}" aria-pressed="${active}" title="${person.role}"${speaking ? ' aria-describedby="customer-speech"' : ''}>
-    ${speaking ? `<span class="customer-speech" id="customer-speech">${escape(person.line)}</span>` : ''}
-    <span class="customer-sprite">${guestSprite(customer.profile)}</span>
+    ${speaking ? `<span class="customer-speech" id="customer-speech">${escape(line)}</span>` : ''}
+    <span class="customer-sprite">${guestSprite(customer.profile)}${quantity > 1 ? `<span class="customer-order-count" aria-label="Đã giao ${served} trên ${quantity} bịch">${served ? `${served}/${quantity}` : `×${quantity}`}</span>` : ''}</span>
     <b>${person.name}</b>
     <span class="patience" role="progressbar" aria-label="Kiên nhẫn của ${person.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" data-patience="${customer.id}">
       <i class="${patienceColor(percent)}" style="width:${percent}%"></i>
@@ -239,8 +242,9 @@ function orderSlip(customer: Customer, bowl?: Bowl): string {
     </div>
     <table class="order-table">
       <thead><tr><th scope="col">Món</th><th scope="col">SL</th><th scope="col">Tổng</th></tr></thead>
-      <tbody><tr><td><h2>${menu[order.dish].name}</h2></td><td>1</td><td>${money(order.price)}</td></tr></tbody>
+      <tbody><tr><td><h2>${menu[order.dish].name}</h2></td><td>${order.quantity}</td><td>${money(order.price * order.quantity)}</td></tr></tbody>
     </table>
+    ${order.quantity > 1 ? `<p class="order-portions" role="status">Đã giao <strong>${customer.servedPortions.length}/${order.quantity}</strong> bịch</p>` : ''}
     <ul class="order-ingredients" aria-label="Nguyên liệu theo đơn">${foodList.map(id => orderIngredient(id, order, bowl)).join('')}</ul>
     <div class="order-notes"><b>Ghi chú</b><span${heatMismatch ? ' class="note-mismatch"' : ''}>${heatLabels[order.heat]}</span>
       ${order.noCilantro ? `<span${bowl?.ingredients.cilantro ? ' class="note-mismatch"' : ''}>Bỏ rau răm</span>` : ''}
@@ -259,8 +263,9 @@ function receiptSummary(guest: Customer, active: boolean, bowl?: Bowl): string {
       aria-current="${active}" aria-controls="order-details">
       <span class="receipt-meta"><b>#${String(guest.id).padStart(3, '0')}</b><span>${profiles[guest.profile].name}</span></span>
       <b class="receipt-dish">${dish}</b>
+      ${order.quantity > 1 ? `<span class="receipt-portions">Đã giao ${guest.servedPortions.length}/${order.quantity} bịch</span>` : ''}
       <span class="receipt-notes">${notes.join(' · ')}</span>
-      <span class="receipt-summary-footer"><b>${money(order.price)}</b><span aria-label="${checked} trên ${ids.length} nguyên liệu">${checked}/${ids.length}</span></span>
+      <span class="receipt-summary-footer"><b>${money(order.price * order.quantity)}</b><span aria-label="${checked} trên ${ids.length} nguyên liệu">${checked}/${ids.length}</span></span>
     </button>
   </li>`
 }
@@ -314,7 +319,7 @@ function kitchen(state: GameState, options: ScreenOptions): string {
         <i>${index + 1 < stage ? icon('check', 10) : index + 1}</i>${name}</span>`).join('')}
     </div>
     <div class="bowl-area" data-drop-zone>
-      <div class="bowl-caption"><strong>Thau trộn</strong><span>${bowl?.pack ? 'Đã gói · kèm đũa tre' : 'Bấm hoặc kéo nguyên liệu vào thau'}</span></div>
+      <div class="bowl-caption"><strong>Thau trộn${customer && customer.order.quantity > 1 ? ` · Bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : ''}</strong><span>${bowl?.pack ? 'Đã gói · kèm đũa tre' : 'Bấm hoặc kéo nguyên liệu vào thau'}</span></div>
       ${next === 'toppings' ? '<span class="topping-cue">Thêm topping ↓</span>' : ''}
       ${bowlArt(bowl)}
       <button type="button" class="icon-button waste-button" data-action="trash" aria-label="Đổ bỏ phần bánh" title="Đổ bỏ phần bánh" ${priceOf(bowl?.ingredients ?? {}) ? '' : 'disabled'}>${icon('trash', 18)}</button>
@@ -337,7 +342,7 @@ function kitchen(state: GameState, options: ScreenOptions): string {
       <span class="pack-stock">${state.inventory.pack} bộ gói</span>
     </div>
     <button type="button" class="button primary serve-button" data-action="deliver" ${canDeliver(state) ? '' : 'disabled'}>
-      ${icon('check', 19)} Giao món ${icon('arrow', 17)}
+      ${icon('check', 19)} ${customer && customer.order.quantity > 1 ? `Giao bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : 'Giao món'} ${icon('arrow', 17)}
     </button>
   </section>`
 }
