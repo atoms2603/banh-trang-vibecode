@@ -138,13 +138,14 @@ function renderTutorial(): void {
 
   // The customer card still moves during its entrance, so its bounds are not ready yet.
   const priceStepper = lesson.action === 'price' ? screen.querySelector<HTMLElement>(`[data-price-for="${lesson.id}"]`) : null
-  const target = button ?? priceStepper ?? (lesson.action === 'mix-ready' ? screen.querySelector<HTMLElement>('.mix-meter') : null)
+  const orderPanel = lesson.action === 'read-order' ? screen.querySelector<HTMLElement>('.order-details') : null
+  const target = orderPanel ?? button ?? priceStepper ?? (lesson.action === 'mix-ready' ? screen.querySelector<HTMLElement>('.mix-meter') : null)
   if (!target) return
 
   const reveal = () => {
     if (!target.isConnected) return
     for (const control of allowed) control.inert = false
-    const focusTarget = priceStepper?.querySelector<HTMLButtonElement>('[data-action="price-up"]') ?? target
+    const focusTarget = orderPanel && button ? button : priceStepper?.querySelector<HTMLButtonElement>('[data-action="price-up"]') ?? target
     if (!button && !priceStepper) target.tabIndex = -1
     tutorialTarget = target
     focusTarget.setAttribute('aria-describedby', instruction.id)
@@ -171,9 +172,25 @@ function sizeOrderDock(): void {
   const dock = screen.querySelector<HTMLElement>('.order-dock')
   const frame = screen.querySelector('.shop-layout .game-frame')
   if (!dock || !frame) return
-  const stickyTop = Number.parseFloat(getComputedStyle(dock).top)
+  const style = getComputedStyle(dock)
+  if (style.position !== 'sticky') {
+    dock.style.removeProperty('--dock-visible-top')
+    return
+  }
+  const stickyTop = Number.parseFloat(style.top)
   const visibleTop = Math.max(stickyTop, frame.getBoundingClientRect().top)
   dock.style.setProperty('--dock-visible-top', visibleTop + 'px')
+}
+
+function updateLayout(): void {
+  sizeOrderDock()
+  positionTutorial()
+}
+
+function resizeLayout(): void {
+  updateLayout()
+  tutorialTarget?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  requestAnimationFrame(updateLayout)
 }
 
 function renderScreen(move = false): void {
@@ -186,6 +203,7 @@ function renderScreen(move = false): void {
   options.previousCustomers = new Set(Array.from(screen.querySelectorAll<HTMLElement>('[data-action=customer]'),
     customer => Number(customer.dataset.id)))
   const orderScroll = screen.querySelector<HTMLElement>('.order-sheet')?.scrollTop ?? 0
+  const shopScroll = screen.querySelector<HTMLElement>('.shop-screen')?.scrollTop ?? 0
   const previousDetails = screen.querySelector<HTMLElement>('.order-details')
   const detailScroll = previousDetails?.scrollTop ?? 0
   screen.innerHTML = renderApp(state, options)
@@ -197,12 +215,15 @@ function renderScreen(move = false): void {
       heading.focus({ preventScroll: true })
     }
   } else if (active) restoreFocus(screen, active)
-  renderTutorial()
-  sizeOrderDock()
   const sheet = screen.querySelector<HTMLElement>('.order-sheet')
   if (sheet) sheet.scrollTop = orderScroll
+  const shop = screen.querySelector<HTMLElement>('.shop-screen')
+  if (shop && !move) shop.scrollTop = shopScroll
   const details = screen.querySelector<HTMLElement>('.order-details')
   if (details && details.dataset.orderId === previousDetails?.dataset.orderId) details.scrollTop = detailScroll
+  sizeOrderDock()
+  renderTutorial()
+  updateLayout()
 }
 
 function renderModal(): void {
@@ -366,6 +387,13 @@ function handle(button: HTMLButtonElement): void {
     return
   }
   if (!state) return
+
+  if (action === 'read-order' && currentLesson(state)?.action === 'read-order') {
+    advanceTutorial(state, action)
+    persist()
+    renderScreen()
+    return
+  }
 
   if (action === 'close-shop' && state.phase === 'shop') return showModal('close-shop')
   if (action === 'close-confirm' && options.modal === 'close-shop') {
@@ -560,10 +588,10 @@ function finishDrag(event: PointerEvent): void {
 
 window.addEventListener('pointerup', finishDrag)
 window.addEventListener('pointercancel', finishDrag)
-window.addEventListener('scroll', positionTutorial, { passive: true })
-window.addEventListener('scroll', sizeOrderDock, { passive: true })
-window.addEventListener('resize', positionTutorial)
-window.addEventListener('resize', sizeOrderDock)
+window.addEventListener('scroll', updateLayout, { passive: true })
+screen.addEventListener('scroll', positionTutorial, { capture: true, passive: true })
+window.addEventListener('resize', resizeLayout)
+window.visualViewport?.addEventListener('resize', resizeLayout)
 window.addEventListener('pagehide', () => persist())
 document.addEventListener('visibilitychange', () => {
   persist()

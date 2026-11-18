@@ -3,6 +3,7 @@ import { heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, 
 import { hasStock, money, priceBand, priceOf, sumReports } from './economy.ts'
 import { canDeliver, CLOSE_MINUTE, currentCustomer, enabledDishes, formatShopTime, marketUnlocked, mixProgress, OPEN_MINUTE, openingProblem, patienceLeft, shopTime } from './game.ts'
 import type { Bowl, Customer, DailyReport, GameState, IngredientId, MenuId, Order, ReplyId } from './types.ts'
+import { currentLesson } from './tutorial.ts'
 
 export type Modal = 'help' | 'reviews' | 'reset' | 'ledger' | 'close-shop' | null
 export interface ScreenOptions {
@@ -271,6 +272,7 @@ function orderDock(state: GameState): string {
   return `<aside class="order-dock" aria-label="Phiếu order và hàng chờ">
     <section class="order-details" id="order-details" aria-label="Phiếu order đang làm" data-order-id="${active?.id ?? ''}">
       ${active ? orderSlip(active, bowl) : '<div class="order-slip order-slip-empty"><p class="order-ticket-title">Phiếu order</p></div>'}
+      ${active && currentLesson(state)?.action === 'read-order' ? '<button type="button" class="button quiet order-read" data-action="read-order">Đã xem phiếu</button>' : ''}
     </section>
     <section class="order-board" aria-labelledby="order-board-title">
       <h2 class="dock-heading" id="order-board-title">${icon('ledger', 15)} Phiếu chờ <span>${queue.length}</span></h2>
@@ -388,11 +390,13 @@ function tray(state: GameState, id: IngredientId, customer?: Customer): string {
 function shopScreen(state: GameState, options: ScreenOptions): string {
   return `<main class="game-screen shop-screen">
     ${statusStrip(state, true)}
-    <div class="queue-heading"><h1>Quầy bán hàng</h1><div class="heading-buttons">
-      <button type="button" class="button quiet close-shift" data-action="close-shop">Kết thúc sớm</button>
-      ${labelButton('help', 'Hướng dẫn nhanh', 'help')}
-    </div></div>
-    ${queueScene(state, options)}
+    <section class="shop-front" aria-label="Quầy đón khách">
+      <div class="queue-heading"><h1>Quầy bán hàng</h1><div class="heading-buttons">
+        <button type="button" class="button quiet close-shift" data-action="close-shop">Kết thúc sớm</button>
+        ${labelButton('help', 'Hướng dẫn nhanh', 'help')}
+      </div></div>
+      ${queueScene(state, options)}
+    </section>
     ${kitchen(state, options)}
   </main>`
 }
@@ -516,7 +520,7 @@ export function renderApp(state: GameState | null, options: ScreenOptions): stri
       ${orderDock(state)}
     </div>`
   }
-  return `<div class="game-frame">
+  return `<div class="game-frame standalone-layout">
     ${topbar}
     ${warning}
     ${options.home || !state ? homeScreen(state) : state.phase === 'prep' ? prepScreen(state, options) : reportScreen(state, options)}

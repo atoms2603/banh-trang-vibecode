@@ -9,6 +9,7 @@ interface Lesson {
 
 const menuLessonCount = 2
 const legacyOpenStep = 5
+const orderLessonStep = 9
 
 const lessons: readonly Lesson[] = [
   { action: 'buy', id: 'rice', instruction: 'Nhập một bịch bánh tráng cắt sợi.' },
@@ -20,6 +21,7 @@ const lessons: readonly Lesson[] = [
   { action: 'price', id: 'salt', prepTab: 'menu', instruction: 'Bấm − hoặc + để chỉnh giá Bánh tráng muối tắc. Mỗi nấc là 1.000đ.' },
   { action: 'open', prepTab: 'menu', instruction: 'Bạn có thể chỉnh thêm giá. Khi đã sẵn sàng, bấm Mở cửa bán hàng!' },
   { action: 'customer', instruction: 'Chọn vị khách đầu tiên để đọc đơn.' },
+  { action: 'read-order', instruction: 'Đây là phiếu order của khách. Xem tên món, hình nguyên liệu và mức cay ở đây để làm đúng đơn. Bấm Đã xem phiếu để bắt đầu.' },
   { action: 'ingredient', id: 'rice', instruction: 'Chạm hoặc kéo bánh tráng vào thau.' },
   { action: 'ingredient', id: 'kumquat', instruction: 'Vắt tắc vào thau để làm mềm bánh.' },
   { action: 'ingredient', id: 'shrimpSalt', instruction: 'Thêm một phần muối tôm.' },
@@ -30,13 +32,14 @@ const lessons: readonly Lesson[] = [
   { action: 'deliver', instruction: 'Bấm Giao món để phục vụ vị khách đầu tiên.' },
 ]
 
-export function validTutorialStep(value: unknown, legacy: boolean): boolean {
-  const count = lessons.length - (legacy ? menuLessonCount : 0)
+export function validTutorialStep(value: unknown, version: number): boolean {
+  const count = lessons.length - (version < 3 ? menuLessonCount : 0) - (version < 4 ? 1 : 0)
   return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < count)
 }
 
-export function upgradeTutorialStep(step: number): number {
-  return step >= legacyOpenStep ? step + menuLessonCount : step
+export function upgradeTutorialStep(step: number, version: number): number {
+  const menuStep = version < 3 && step >= legacyOpenStep ? step + menuLessonCount : step
+  return version < 4 && menuStep >= orderLessonStep ? menuStep + 1 : menuStep
 }
 
 export function currentLesson(state: GameState | null) {

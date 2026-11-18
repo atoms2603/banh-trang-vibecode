@@ -334,6 +334,12 @@ test('the first lesson retains its place in a save and waits without running dow
   assert.equal(state.shift!.elapsedMs, arrival)
   assert.equal(state.shift!.queue.length, 1)
   assert.equal(state.reviews.length, 0)
+  assert.equal(currentLesson(state)?.action, 'read-order')
+  assert.equal(lessonAllows(state, 'ingredient', 'rice'), false)
+  state = parseSave(JSON.stringify(state))!
+  assert.equal(currentLesson(state)?.action, 'read-order')
+  advanceTutorial(state, 'read-order')
+  assert.equal(lessonAllows(state, 'ingredient', 'rice'), true)
   for (const id of ['rice', 'kumquat', 'shrimpSalt'] as const) {
     gather(state, [id])
     advanceTutorial(state, 'ingredient', id)
@@ -379,6 +385,18 @@ test('legacy day-one saves keep their existing menu and tutorial progress', () =
   assert.equal(currentLesson(mixing)?.action, 'mix-ready')
   assert.deepEqual(mixing.shift, state.shift)
   assert.equal(mixing.cash, state.cash)
+
+  const previousMixing = parseSave(JSON.stringify({ ...state, version: 3, tutorialStep: 13 }))!
+  assert.equal(currentLesson(previousMixing)?.action, 'mix-ready')
+  assert.deepEqual(previousMixing.shift, state.shift)
+  assert.equal(previousMixing.cash, state.cash)
+
+  const selected = parseSave(JSON.stringify({ ...state, version: 3, tutorialStep: 8 }))!
+  advanceTutorial(selected, 'customer', String(currentCustomer(selected)!.id))
+  assert.equal(currentLesson(selected)?.action, 'read-order')
+  const alreadyStarted = parseSave(JSON.stringify({ ...state, version: 3, tutorialStep: 9 }))!
+  assert.equal(currentLesson(alreadyStarted)?.action, 'ingredient')
+  assert.equal(currentLesson(alreadyStarted)?.id, 'rice')
 })
 
 test('an early close records the actual hour, writes off the active bowl, and settles once', () => {

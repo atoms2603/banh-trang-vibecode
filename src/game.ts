@@ -28,7 +28,7 @@ function emptyBowl(): Bowl {
 
 export function newGame(guided = false): GameState {
   return {
-    version: 3, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
+    version: 4, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
     inventory: Object.fromEntries(ingredientIds.map(id => [id, 0])) as Inventory,
     menu: Object.fromEntries(menuIds.map(id => [id, { enabled: !guided && id === 'salt', price: defaultPrice(id) }])) as GameState['menu'],
     reviews: [], reports: [], staff: false, muted: false, nextCustomerId: 1,
