@@ -1,4 +1,4 @@
-import { avatar, bowlArt, counterScene, food, guestSprite, icon, storefront, trayContents } from './art.ts'
+import { avatar, bowlArt, food, guestSprite, icon, storefront, trayContents } from './art.ts'
 import { heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, replies, staffWage, missionLabels, regularStories, specialChallenges } from './data.ts'
 import { currentShiftPhase, shiftNotice } from './engagement.ts'
 import { hasStock, money, priceBand, priceOf, sumReports } from './economy.ts'
@@ -199,10 +199,8 @@ function customerFigure(state: GameState, customer: Customer, options: ScreenOpt
   const quantity = customer.order.quantity
   const served = customer.servedPortions.length
   const chapter = customer.storyStage === undefined ? undefined : regularStories[customer.profile]?.chapters[customer.storyStage]
-  const line = customer.special ? 'Mình ghé thử thách tiệm một chút nha!' : chapter?.greeting ?? (quantity > 1 ? `Cho ${quantity} bịch nha!` : person.line)
-  return `<button type="button" class="customer-figure${arriving ? ' arriving' : ''}${customer.id % 2 ? '' : ' from-right'}" data-action="customer" data-id="${customer.id}"
+  return `<button type="button" class="customer-figure${arriving ? ' arriving' : ''}" data-action="customer" data-id="${customer.id}"
      aria-label="${person.name}" aria-pressed="${active}" title="${person.role}"${speaking ? ' aria-describedby="customer-speech"' : ''}>
-    ${speaking ? `<span class="customer-speech" id="customer-speech">${escape(line)}</span>` : ''}
     <span class="customer-sprite">${guestSprite(customer.profile)}${quantity > 1 ? `<span class="customer-order-count" aria-label="Đã giao ${served} trên ${quantity} bịch">${served ? `${served}/${quantity}` : `×${quantity}`}</span>` : ''}</span>
     <b>${customer.special ? '★ ' : chapter ? '♡ ' : ''}${person.name}</b>
     <span class="patience" role="progressbar" aria-label="Kiên nhẫn của ${person.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" data-patience="${customer.id}">
@@ -213,8 +211,14 @@ function customerFigure(state: GameState, customer: Customer, options: ScreenOpt
 
 function queueScene(state: GameState, options: ScreenOptions): string {
   const queue = state.shift?.queue ?? []
+  const active = currentCustomer(state)
+  const speaking = active && options.customerSpeechId === active.id ? active : undefined
+  const chapter = speaking?.storyStage === undefined ? undefined : regularStories[speaking.profile]?.chapters[speaking.storyStage]
+  const line = speaking ? speaking.special ? 'Mình ghé thử thách tiệm một chút nha!' : chapter?.greeting
+    ?? (speaking.order.quantity > 1 ? `Cho ${speaking.order.quantity} bịch nha!` : profiles[speaking.profile].line) : ''
   return `<section class="queue-scene" aria-label="Hàng khách đợi">
-    ${counterScene(state.level)}
+    <img class="ganh-art" src="./art/ganh.webp" width="640" height="480" alt="Gánh bánh tráng với hai thúng tre và dù hồng" draggable="false">
+    ${speaking ? `<div class="customer-speech" id="customer-speech"><div class="customer-speech-body"><strong>${profiles[speaking.profile].name}</strong><br>${escape(line)}</div></div>` : ''}
     <div class="customers">${queue.length ? queue.map(customer => customerFigure(state, customer, options)).join('')
       : `<p class="queue-empty">${currentShiftPhase(state).intervalFactor === 0 ? 'Đã ngừng đón khách mới.' : enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
     ${options.departure ? `<div class="departure" style="--departure-duration:${options.departure.durationMs}ms" aria-hidden="true"><span>${escape(options.departure.text)}</span><div>${guestSprite(options.departure.profile)}</div></div>` : ''}
@@ -238,6 +242,7 @@ function orderIngredient(id: IngredientId, order: Order, bowl?: Bowl): string {
     <button type="button" class="order-ingredient${complete ? ' checked' : ''}${wrong ? ' mismatched' : ''}"
       data-action="order-ingredient" data-id="${id}" aria-label="${label}" title="${label}">
       ${trayContents(id)}
+      <span class="order-ingredient-name">${short}</span>
       ${quantity > 1 ? `<b class="order-quantity" aria-hidden="true">×${quantity}</b>` : ''}
       <span class="order-check" aria-hidden="true">${complete ? icon('check', 10) : wrong ? '!' : ''}</span>
     </button>
@@ -291,24 +296,27 @@ function receiptSummary(guest: Customer, active: boolean, bowl?: Bowl): string {
   </li>`
 }
 
-function orderDock(state: GameState): string {
+function orderDetails(state: GameState): string {
+  const active = currentCustomer(state)
+  const bowl = state.shift?.bowl
+  return `<section class="order-details" id="order-details" aria-label="Phiếu order đang làm" data-order-id="${active?.id ?? ''}">
+      ${active ? orderSlip(active, bowl) : '<div class="order-slip order-slip-empty"><p class="order-ticket-title">Phiếu order</p></div>'}
+      ${active && currentLesson(state)?.action === 'read-order' ? '<button type="button" class="button quiet order-read" data-action="read-order">Đã xem phiếu</button>' : ''}
+    </section>`
+}
+
+function orderBoard(state: GameState): string {
   const queue = state.shift?.queue ?? []
   const active = currentCustomer(state)
   const bowl = state.shift?.bowl
-  return `<aside class="order-dock" aria-label="Phiếu order và hàng chờ">
-    <section class="order-details" id="order-details" aria-label="Phiếu order đang làm" data-order-id="${active?.id ?? ''}">
-      ${active ? orderSlip(active, bowl) : '<div class="order-slip order-slip-empty"><p class="order-ticket-title">Phiếu order</p></div>'}
-      ${active && currentLesson(state)?.action === 'read-order' ? '<button type="button" class="button quiet order-read" data-action="read-order">Đã xem phiếu</button>' : ''}
-    </section>
-    <section class="order-board" aria-labelledby="order-board-title">
+  return `<section class="order-board" aria-labelledby="order-board-title">
       <h2 class="dock-heading" id="order-board-title">${icon('ledger', 15)} Phiếu chờ <span>${queue.length}</span></h2>
       <div class="order-sheet">
         ${queue.length ? `<ol class="order-list" aria-label="Phiếu đang chờ" role="list">
           ${queue.map(guest => receiptSummary(guest, guest.id === active?.id, guest.id === active?.id ? bowl : undefined)).join('')}
         </ol>` : ''}
       </div>
-    </section>
-  </aside>`
+    </section>`
 }
 
 function nextKitchenAction(order: Order, bowl: Bowl, percent: number): 'mix' | 'toppings' | 'final-mix' | null {
@@ -355,16 +363,18 @@ function kitchen(state: GameState, options: ScreenOptions): string {
       <button type="button" class="button quiet final-mix-button${next === 'final-mix' ? ' suggested-action' : ''}" data-action="final-mix" ${percent < 100 || bowl?.finalMixed || bowl?.pack ? 'disabled' : ''}>${icon(bowl?.finalMixed ? 'check' : 'mix', 16)} Trộn nhẹ</button>
     </div>
     ${ingredientStation(state, options, next === 'toppings', customer)}
-    <div class="pack-controls" role="group" aria-label="Đóng gói">
-      <button type="button" class="button quiet ${bowl?.pack === 'bag' ? 'packed' : ''}" data-action="pack" data-id="bag"
-        aria-pressed="${bowl?.pack === 'bag'}" ${percent < 100 || (!bowl?.pack && !state.inventory.pack) ? 'disabled' : ''}>Bịch nilon</button>
-      ${state.level >= 3 ? `<button type="button" class="button quiet ${bowl?.pack === 'box' ? 'packed' : ''}" data-action="pack" data-id="box"
-        aria-pressed="${bowl?.pack === 'box'}" ${percent < 100 || (!bowl?.pack && !state.inventory.pack) ? 'disabled' : ''}>Hộp giấy</button>` : ''}
-      <span class="pack-stock">${state.inventory.pack} bộ gói</span>
+    <div class="handoff-controls">
+      <div class="pack-controls" role="group" aria-label="Đóng gói">
+        <button type="button" class="button quiet ${bowl?.pack === 'bag' ? 'packed' : ''}" data-action="pack" data-id="bag"
+          aria-pressed="${bowl?.pack === 'bag'}" ${percent < 100 || (!bowl?.pack && !state.inventory.pack) ? 'disabled' : ''}>Bịch nilon</button>
+        ${state.level >= 3 ? `<button type="button" class="button quiet ${bowl?.pack === 'box' ? 'packed' : ''}" data-action="pack" data-id="box"
+          aria-pressed="${bowl?.pack === 'box'}" ${percent < 100 || (!bowl?.pack && !state.inventory.pack) ? 'disabled' : ''}>Hộp giấy</button>` : ''}
+        <span class="pack-stock">${state.inventory.pack} bộ gói</span>
+      </div>
+      <button type="button" class="button primary serve-button" data-action="deliver" ${canDeliver(state) ? '' : 'disabled'}>
+        ${icon('check', 19)} ${customer && customer.order.quantity > 1 ? `Giao bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : 'Giao món'} ${icon('arrow', 17)}
+      </button>
     </div>
-    <button type="button" class="button primary serve-button" data-action="deliver" ${canDeliver(state) ? '' : 'disabled'}>
-      ${icon('check', 19)} ${customer && customer.order.quantity > 1 ? `Giao bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : 'Giao món'} ${icon('arrow', 17)}
-    </button>
   </section>`
 }
 
@@ -424,7 +434,11 @@ function shopScreen(state: GameState, options: ScreenOptions): string {
       </div></div>
       ${queueScene(state, options)}
     </section>
-    ${kitchen(state, options)}
+    ${orderBoard(state)}
+    <div class="prep-workspace">
+      ${orderDetails(state)}
+      ${kitchen(state, options)}
+    </div>
   </main>`
 }
 
@@ -547,7 +561,6 @@ export function renderApp(state: GameState | null, options: ScreenOptions): stri
     return `<div class="shop-layout">
       ${topbar}
       <div class="game-frame">${warning}${shopScreen(state, options)}</div>
-      ${orderDock(state)}
     </div>`
   }
   return `<div class="game-frame standalone-layout">

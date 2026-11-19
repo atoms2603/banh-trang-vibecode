@@ -246,7 +246,6 @@ h1, h2, h3, p { margin: 0; }
 .receipt-challenge { color: #956225; font-size: 11px; font-weight: 900; }
 .departure span { max-width: min(230px, 65vw); line-height: 1.45; }
 @keyframes phase-in { from { opacity: .4; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-@media (min-width: 700px) { .shop-screen > .activity-hud { width: min(100%, 760px); margin-inline: auto; } }
 @media (max-height: 540px) and (orientation: landscape) {
   .shop-screen > .activity-hud { gap: 5px; margin-bottom: 2px; }
   .shop-screen .xp-status { flex-basis: 120px; min-width: 100px; }
@@ -392,6 +391,7 @@ h1, h2, h3, p { margin: 0; }
 .queue-heading h1 { font-size: 22px; }
 .queue-heading .icon-button { width: 30px; height: 30px; }
 .queue-scene {
+  --stall-width: clamp(88px, 24cqw, 210px);
   position: relative;
   container-type: inline-size;
   height: clamp(138px, 36vw, 148px);
@@ -399,23 +399,25 @@ h1, h2, h3, p { margin: 0; }
   overflow: hidden;
   border: 1px solid #c89a7f;
   border-radius: 13px;
-  background: #ebcdb1;
+  background: #ebcdb1 url('/art/sidewalk.webp') left top / auto 100% repeat-x;
 }
-.counter-art {
+.ganh-art {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  font-family: var(--body);
+  left: 6px;
+  bottom: 30px;
+  width: var(--stall-width);
+  height: calc(100% - 36px);
+  object-fit: contain;
+  object-position: left bottom;
   pointer-events: none;
 }
 .customers {
   position: absolute;
-  inset: 26px 4px 4px;
+  inset: 18px 8px 6px calc(var(--stall-width) + 16px);
   display: flex;
-  justify-content: center;
+  justify-content: start;
   align-items: end;
-  gap: 4px;
+  gap: clamp(4px, 1.2cqw, 20px);
 }
 .queue-empty {
   background: #fff5e3;
@@ -431,7 +433,8 @@ h1, h2, h3, p { margin: 0; }
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  width: min(23%, 76px);
+  flex: 0 0 clamp(44px, 12cqw, 96px);
+  min-width: 44px;
   min-height: 86px;
   padding: 0 3px 1px;
   color: #583b2d;
@@ -439,19 +442,13 @@ h1, h2, h3, p { margin: 0; }
   border-radius: 12px;
   background: transparent;
 }
-.customer-figure.arriving { animation: enter-left .52s ease-out both; }
-.customer-figure.arriving.from-right { animation-name: enter-right; }
-@keyframes enter-left { from { opacity: 0; transform: translateX(-64px); } to { opacity: 1; transform: none; } }
+.customer-figure.arriving { animation: enter-right .52s ease-out both; }
 @keyframes enter-right { from { opacity: 0; transform: translateX(64px); } to { opacity: 1; transform: none; } }
-.customer-figure[aria-describedby="customer-speech"] { z-index: 1; }
 .customer-speech {
-  --arrow-x: 50%;
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 5px);
-  transform: translateX(-50%);
-  width: 130px;
-  padding: 4px 6px;
+  position: fixed;
+  z-index: 10;
+  width: 200px;
+  max-width: calc(100vw - 16px);
   border: 1px solid #bf9071;
   border-radius: 8px;
   background: #fff8e8;
@@ -461,20 +458,22 @@ h1, h2, h3, p { margin: 0; }
   font-weight: 800;
   line-height: 1.2;
   text-align: center;
-  pointer-events: none;
 }
+.customer-speech[hidden] { display: none; }
+.customer-speech-body { max-height: min(180px, calc(100dvh - 32px)); overflow: auto; scrollbar-width: thin; padding: 6px 8px; }
 .customer-speech::after {
   content: '';
   position: absolute;
   top: 100%;
   left: var(--arrow-x);
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   transform: translate(-50%, -50%) rotate(45deg);
   border: solid #bf9071;
   border-width: 0 1px 1px 0;
   background: #fff8e8;
 }
+.customer-speech[data-placement="below"]::after { top: 0; border-width: 1px 0 0 1px; }
 .customer-figure b {
   display: block;
   max-width: 100%;
@@ -546,6 +545,7 @@ h1, h2, h3, p { margin: 0; }
 }
 .departure span { font-size: 10px; font-weight: 900; background: #fff7e9; border: 1px solid #d5a690; border-radius: 7px; padding: 4px 6px; }
 .departure div { width: 47px; height: 61px; }
+.departure .guest-sprite { transform: scaleX(-1); }
 @keyframes walk-away { 0% { opacity: 0; transform: translate(0, 3px); } 15%, 60% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(75px, -1px); } }
 
 .order-slip {
@@ -993,96 +993,85 @@ h1, h2, h3, p { margin: 0; }
 }
 
 .payment-burst {
-  position: absolute;
+  position: fixed;
+  left: 50%;
+  top: 50%;
   z-index: 14;
   width: 0;
   height: 0;
   pointer-events: none;
 }
-.payment-coin, .payment-amount { position: absolute; white-space: nowrap; }
-.payment-coin {
-  inset: -8px auto auto -8px;
-  color: #855625;
-  animation: coin-burst .86s var(--coin-delay) ease-out both;
-}
-.payment-coin svg { fill: #f8cb69; filter: drop-shadow(0 1px 1px #6a441f55); }
 .payment-amount {
-  z-index: 1;
-  padding: 2px 10px;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 8px 14px;
   border: 1px solid #d1a359;
   border-radius: 9px;
   background: #fff1c5;
   color: #69471f;
   box-shadow: 0 2px 5px #6a441f38;
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 950;
   font-variant-numeric: tabular-nums;
   animation: payment-rise .94s ease-out both;
 }
 .status-cash.cash-received { animation: cash-received .46s ease-out; }
-@keyframes coin-burst {
-  from { opacity: 0; transform: scale(.4); }
-  14% { opacity: 1; }
-  32% { transform: translate(var(--coin-x), var(--coin-y)) rotate(var(--coin-spin)) scale(1.05); }
-  88% { opacity: 1; }
-  to { opacity: 0; transform: translate(var(--cash-x), var(--cash-y)) scale(.35); }
-}
 @keyframes payment-rise {
-  from { opacity: 0; transform: translate(-50%, -50%) scale(.82); }
-  18% { opacity: 1; transform: translate(-50%, -115%) scale(1.05); }
-  42% { transform: translate(-50%, -145%) scale(1); }
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.9); }
+  15% { opacity: 1; }
   75% { opacity: 1; }
-  to { opacity: 0; transform: translate(calc(-50% + var(--cash-x)), calc(-50% + var(--cash-y))) scale(.45); }
+  to { opacity: 0; transform: translate(-50%, calc(-50% - 90px)) scale(1); }
 }
 @keyframes cash-received {
   35% { transform: scale(1.06); box-shadow: 0 0 0 3px #f5c77280; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .payment-coin { display: none; }
-  .payment-amount { animation-name: none; transform: translate(-50%, -26px); }
+  .payment-amount { animation-name: none; transform: translate(-50%, -50%); }
 }
 
 .shop-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(190px, 25vw, 280px);
-  grid-template-rows: auto 1fr;
-  align-items: start;
-  gap: 8px 12px;
-  width: min(calc(100% - 24px), 1440px);
-  min-height: calc(100dvh - 25px);
-  margin: 16px auto 9px;
+  gap: 8px;
+  width: min(calc(100% - 24px), 1920px);
+  margin: 12px auto;
 }
 .shop-layout > .topbar {
-  grid-column: 1 / -1;
   min-width: 0;
+  height: 54px;
   border: 1px solid #e4c7b6;
   border-radius: 17px 17px 8px 8px;
 }
-.shop-layout .game-frame { width: 100%; min-width: 0; margin: 0; border-radius: 12px 12px 24px 24px; }
-.order-dock {
-  --dock-gap: 7px;
-  position: sticky;
-  top: max(9px, env(safe-area-inset-top));
-  z-index: 6;
+.shop-layout .game-frame { width: 100%; min-width: 0; min-height: 0; margin: 0; border-radius: 12px; }
+.shop-layout .shop-screen { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.shop-screen > .activity-hud { width: 100%; margin: 0; }
+.shop-screen > .status-strip { flex-wrap: wrap; }
+.shop-screen .queue-heading { flex-wrap: wrap; gap: 8px; margin: 0 0 6px; }
+.shop-screen .queue-scene { height: clamp(154px, 14dvh, 190px); }
+.prep-workspace { display: grid; align-items: stretch; gap: 12px; min-width: 0; }
+.prep-workspace .kitchen { margin: 0; }
+.order-details {
   display: flex;
   flex-direction: column;
-  gap: var(--dock-gap);
   min-width: 0;
-  height: max(0px, calc(100dvh - var(--dock-visible-top, 105px) - max(9px, env(safe-area-inset-bottom))));
-}
-.order-details {
-  flex: 0 1 auto;
-  max-height: min(55dvh, 58%);
+  min-height: 0;
+  height: 220px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   padding: 4px;
   border: 1px solid #d9b99d;
   border-radius: 9px;
   background: #f4e4d2;
 }
+.order-details .order-slip { flex: 1; }
 .order-board {
   display: flex;
-  flex: 1 1 0;
   flex-direction: column;
-  min-height: 0;
+  min-width: 0;
+  height: 156px;
   padding: 7px;
   border: 1px solid #9b6d50;
   border-radius: 10px;
@@ -1090,17 +1079,18 @@ h1, h2, h3, p { margin: 0; }
     linear-gradient(90deg, #b88768, #d1a382 47%, #ba8969);
   box-shadow: inset 0 1px #f5c7a2a6, 0 3px 0 #805b454d;
 }
-.dock-heading { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; margin: 0 1px 4px; color: #442b20; font-size: 12px; font-weight: 950; }
-.dock-heading span { margin-left: auto; min-width: 15px; padding-inline: 2px; border-radius: 4px; background: #fff1d5; text-align: center; font-size: 10px; }
-.order-sheet, .order-details { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-.order-sheet { flex: 1 1 auto; }
-.order-list { display: grid; gap: 6px; margin: 0; padding: 1px 2px 3px; list-style: none; }
+.dock-heading { display: flex; flex-shrink: 0; align-items: center; gap: 4px; margin: 0 1px 4px; color: #442b20; font-size: 12px; font-weight: 950; }
+.dock-heading span { min-width: 15px; padding-inline: 2px; border-radius: 4px; background: #fff1d5; text-align: center; font-size: 10px; }
+.order-sheet { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.order-list { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(220px, calc((100% - 30px) / 4), 420px); align-items: stretch; gap: 10px; margin: 0; padding: 2px 3px 5px; list-style: none; }
+.order-list > li { display: flex; min-width: 0; }
 .order-receipt {
   display: grid;
+  align-content: start;
   width: 100%;
   min-width: 0;
-  gap: 3px;
-  padding: 6px 7px 8px;
+  gap: 2px;
+  padding: 6px 10px;
   border: 1px solid #dbbb97;
   border-radius: 3px 3px 1px 1px;
   background: linear-gradient(174deg, #fffaf0 76%, #f0e0c6);
@@ -1108,55 +1098,19 @@ h1, h2, h3, p { margin: 0; }
   text-align: left;
   box-shadow: 1px 2px 2px #54382957;
 }
-.order-receipt[aria-current="true"] { border-left: 3px solid #c98274; background: linear-gradient(174deg, #fff7e5 76%, #f1dcb7); }
+.order-receipt[aria-current="true"] { border-left: 3px solid #c98274; background: linear-gradient(174deg, #fff7e5 76%, #f1dcb7); box-shadow: 0 0 0 2px #c98274, 1px 2px 2px #54382957; }
 .order-receipt:focus-visible { outline-offset: -2px; }
-.receipt-meta { display: flex; justify-content: space-between; gap: 4px; color: #755947; font-size: 10px; line-height: 1.2; }
+.receipt-meta { display: flex; justify-content: space-between; gap: 4px; color: #755947; font-size: 11px; line-height: 1.2; }
 .receipt-meta > span { min-width: 0; overflow-wrap: anywhere; }
-.receipt-dish { font-size: 13px; line-height: 1.1; overflow-wrap: anywhere; }
+.receipt-dish { font-size: 15px; line-height: 1.1; overflow-wrap: anywhere; }
 .receipt-dish::first-letter { text-transform: uppercase; }
-.receipt-notes { color: #755947; font-size: 10px; line-height: 1.2; overflow-wrap: anywhere; }
-.receipt-summary-footer { display: flex; align-items: baseline; justify-content: space-between; gap: 2px; border-top: 1px dashed #d9bc99; padding-top: 2px; font-size: 11px; font-variant-numeric: tabular-nums; }
-.receipt-summary-footer span { color: #6d5d46; font-size: 10px; }
-.order-table th:nth-child(2) { width: 23px; }
-.order-table th:last-child { width: 65px; }
-
+.receipt-notes { color: #755947; font-size: 11px; line-height: 1.2; overflow-wrap: anywhere; }
+.receipt-portions { font-size: 11px; }
+.receipt-summary-footer { display: flex; align-items: baseline; justify-content: space-between; gap: 2px; border-top: 1px dashed #d9bc99; padding-top: 2px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.receipt-summary-footer span { color: #6d5d46; font-size: 12px; }
+.order-ingredient-name { display: none; }
 @media (max-width: 719px) {
-  .shop-layout { grid-template-columns: minmax(0, 1fr) 96px; gap: 5px 4px; width: calc(100% - 20px); }
-  .order-dock { --dock-gap: 4px; }
-  .order-board { padding: 3px; border-radius: 7px 2px 2px 7px; }
-  .dock-heading { margin: 1px 0 4px; font-size: 10px; }
-  .dock-heading svg { width: 12px; height: 12px; }
-  .order-list { gap: 5px; padding-inline: 0; }
-  .order-receipt { padding: 4px 3px 5px; gap: 2px; }
-  .receipt-meta { flex-direction: column; gap: 1px; font-size: 8.5px; }
-  .receipt-dish { font-size: 10.5px; }
-  .receipt-notes { font-size: 8.5px; }
-  .receipt-portions { font-size: 8.5px; }
-  .order-portions { padding-inline: 2px; font-size: 9px; }
-  .receipt-summary-footer { flex-wrap: wrap; font-size: 9px; }
-  .receipt-summary-footer span { font-size: 8px; }
-  .order-details { padding: 2px; border-radius: 7px 2px 2px 7px; }
-  .order-slip { padding: 4px 3px; }
-  .order-slip-empty { min-height: 53px; }
-  .order-ticket-head { grid-template-columns: minmax(0, 1fr); gap: 1px; margin-bottom: 3px; }
-  .order-stamp { display: none; }
-  .order-ticket-title { font-size: 9px; letter-spacing: 0; }
-  .order-customer, .order-number { font-size: 9px; line-height: 1.2; overflow-wrap: anywhere; }
-  .order-table thead { display: none; }
-  .order-table tbody, .order-table tr { display: grid; }
-  .order-table tr { grid-template-columns: auto minmax(0, 1fr); gap: 2px 3px; }
-  .order-table td { border: 0; padding: 0; font-size: 9px; line-height: 1.15; }
-  .order-table td:first-child { grid-column: 1 / -1; }
-  .order-table td:nth-child(2)::before { content: '×'; }
-  .order-table td:last-child { white-space: normal; overflow-wrap: anywhere; }
-  .order-table h2 { font-size: 10px; overflow-wrap: anywhere; }
-  .order-ingredients { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
-  .order-ingredient { width: 100%; min-width: 0; height: 27px; }
-  .order-ingredient .tray-contents { width: min(25px, 100%); height: 22px; }
-  .order-ingredient:focus-visible { outline-offset: -2px; }
-  .order-notes { gap: 2px; font-size: 8.5px; }
-  .order-notes > b { display: none; }
-  .order-notes span { padding-inline: 2px; }
+  .order-ingredient { width: 44px; height: 44px; }
 }
 
 @media (min-width: 720px) {
@@ -1170,28 +1124,51 @@ h1, h2, h3, p { margin: 0; }
   .switch { width: 44px; height: 32px; }
   .switch span { top: 6px; left: 5px; }
   .price-stepper button { width: 38px; height: 38px; }
-  .shop-layout .game-screen { padding: 14px 18px 22px; }
-  .shop-layout .queue-scene { height: clamp(180px, 25vw, 260px); }
-  .shop-layout .customers { bottom: 8px; gap: 10px; }
-  .shop-layout .customer-figure { width: min(23%, 96px); min-height: 108px; }
+  .prep-workspace { grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr); }
+  .shop-layout .customer-figure { min-height: 108px; }
   .shop-layout .customer-sprite { width: min(66px, 100%); }
   .shop-layout .customer-figure b { font-size: 12px; }
-  .shop-layout .bowl-area { min-height: 150px; }
-  .shop-layout .bowl-art { width: 240px; height: 120px; }
-  .shop-layout .tray { --tray-height: 56px; font-size: 11px; }
-  .shop-layout .tray-contents { width: min(100%, 54px); }
+  .shop-layout .bowl-area { min-height: clamp(120px, 13dvh, 170px); }
+  .shop-layout .bowl-art { width: clamp(220px, 17vw, 300px); height: auto; max-width: 70%; }
+  .shop-layout .bowl-caption strong { font-size: 14px; }
+  .shop-layout .bowl-caption span { font-size: 11px; }
+  .shop-layout .tray { --tray-height: clamp(56px, 6dvh, 88px); font-size: clamp(12px, 1vw, 16px); }
+  .shop-layout .tray-contents { width: min(100%, 70px); }
+  .shop-layout .tray-count { font-size: 12px; }
   .shop-layout .ingredient-bank { padding: 9px; }
-  .shop-layout .ingredient-bank h3 { font-size: 13px; }
+  .shop-layout .ingredient-bank h3 { font-size: 15px; }
   .shop-layout .ingredient-station { align-items: stretch; }
   .shop-layout .mix-controls > .button, .shop-layout .pack-controls .button { min-height: 44px; }
   .shop-layout .serve-button { min-height: 48px; }
-  .order-ingredient { width: 42px; height: 40px; }
-  .order-ingredient .tray-contents { width: 36px; height: 34px; }
+  .handoff-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; margin-top: 6px; }
+  .handoff-controls .pack-controls, .handoff-controls .serve-button { margin: 0; }
+  .handoff-controls .pack-controls { flex-wrap: wrap; }
+  /* Let the kitchen set the row height, regardless of receipt content. */
+  .order-details { height: auto; contain: size; }
+  .order-details .order-slip { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .order-ticket-head { grid-template-columns: 36px 1fr auto; }
+  .order-stamp { width: 36px; height: 36px; }
+  .order-ticket-title { font-size: clamp(16px, 1.4vw, 23px); }
+  .order-customer, .order-number, .order-portions { font-size: 14px; }
+  .order-table th { font-size: 12px; }
+  .order-table td { padding-block: 8px; font-size: 15px; }
+  .order-table h2 { font-size: clamp(15px, 1.2vw, 20px); }
+  .order-table th:last-child { width: 85px; }
+  .order-ingredients { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; align-items: stretch; align-content: start; gap: 8px; }
+  .order-ingredient { display: grid; grid-template-rows: 52px 1fr; place-items: center; gap: 4px; width: 100%; height: 100%; padding: 6px 3px; }
+  .order-ingredient .tray-contents { width: 58px; max-width: 100%; height: 52px; }
+  .order-ingredient-name { display: block; min-height: 2.84em; font-size: 12px; line-height: 1.42; font-weight: 900; }
+  .order-notes { margin-top: auto; padding-top: 10px; gap: 6px; font-size: 14px; }
+  .order-notes span { padding: 4px 8px; }
 }
 
-/* Share a row only when the cooking counter has room for both sets of trays. */
 @container kitchen (min-width: 680px) {
-  .shop-layout .ingredient-station { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ingredient-grid { grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); }
+  .ingredient-grid.paired { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ingredient-bank[aria-labelledby="topping-bank"] { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 3fr); gap: 4px 10px; }
+  #topping-bank { grid-column: 1 / -1; }
+  .protein-group { margin-top: 0; }
+  .protein-group .ingredient-grid { grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); }
 }
 
 @media (min-width: 900px), (min-width: 560px) and (orientation: landscape) and (max-height: 600px) {
@@ -1209,47 +1186,9 @@ h1, h2, h3, p { margin: 0; }
   .home-screen .local-note { margin: 0; padding-top: 0; }
 }
 
-/* Wide screens keep the storefront above a centered cooking counter. */
-@media (min-width: 960px) and (orientation: landscape), (min-width: 560px) and (orientation: landscape) and (max-height: 600px) {
-  .shop-layout {
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr) clamp(128px, 21vw, 260px);
-    align-items: stretch;
-    gap: 6px;
-    width: min(100%, 1440px);
-    height: 100dvh;
-    min-height: 0;
-    margin: 0 auto;
-    padding: env(safe-area-inset-top) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
-  }
-  .shop-layout > .topbar { height: 54px; padding: 0 12px; border-radius: 0 0 10px 10px; }
-  .shop-layout .game-frame { min-height: 0; border-radius: 12px; }
-  .shop-layout .shop-screen {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-height: 0;
-    height: 100%;
-    padding: 8px;
-    overflow: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
-    scroll-padding-block: 8px;
-  }
-  .shop-screen > .status-strip { flex: 0 0 auto; flex-wrap: wrap; }
-  .shop-screen > .activity-hud { margin-top: 0; }
-  .shop-screen .shop-front, .shop-screen .kitchen {
-    flex: 0 0 auto;
-    width: min(100%, 760px);
-    margin-inline: auto;
-  }
-  .shop-screen .queue-heading { flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
-  .shop-screen .queue-heading h1 { font-size: clamp(18px, 2vw, 24px); }
-  .shop-screen .heading-buttons { margin-left: auto; }
-  .shop-screen .queue-scene { height: clamp(138px, 28dvh, 260px); }
-  .shop-screen .kitchen { margin-top: 0; }
-  .order-dock { position: relative; top: auto; height: auto; min-height: 0; }
-  .order-details { max-height: 62%; }
+@media (min-width: 1100px) {
+  .shop-layout .shop-screen { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+  .shop-screen > .shop-front, .shop-screen > .order-board, .shop-screen > .prep-workspace { grid-column: 1 / -1; }
 }
 
 @media (orientation: landscape) and (max-height: 600px) and (min-width: 560px) {
@@ -1273,10 +1212,9 @@ h1, h2, h3, p { margin: 0; }
   .shop-layout .ingredient-bank h3 { font-size: 11px; }
   .shop-layout .mix-controls { grid-template-columns: auto minmax(25px, 1fr) auto; gap: 4px; }
   .shop-layout .mix-controls > .button { gap: 3px; padding-inline: 4px; font-size: 10px; }
-  .order-details { max-height: 68%; }
 }
 @media (max-width: 539px) {
-  .shop-layout { width: 100%; gap: 0; grid-template-columns: minmax(0, 1fr) clamp(78px, 22vw, 96px); min-height: 100dvh; margin: 0; }
+  .shop-layout { width: 100%; gap: 0; margin: 0; }
   .shop-layout > .topbar { border: 0; border-radius: 0; border-bottom: 1px solid #efddce; }
   .shop-layout .game-frame { border-radius: 0; }
   .shop-layout .game-screen { padding-inline: 7px; }
@@ -1284,22 +1222,6 @@ h1, h2, h3, p { margin: 0; }
   .shop-layout .status-strip > span { min-height: 27px; padding-inline: 4px; gap: 3px; }
   .shop-layout .status-strip > span svg { width: 13px; height: 13px; }
   .shop-layout .status-close { font-size: 10px; }
-}
-@container (max-width: 360px) {
-  .customer-figure:first-child:nth-last-child(n + 3) .customer-speech {
-    --arrow-x: min(38px, calc(12cqw - 2px));
-    left: 0;
-    transform: none;
-  }
-  .customer-figure:last-child:nth-child(n + 3) .customer-speech {
-    --arrow-x: calc(100% - min(38px, 12cqw - 2px));
-    left: auto;
-    right: 0;
-    transform: none;
-  }
-}
-@container (max-width: 240px) {
-  .customer-speech { width: 110px; font-size: 10px; }
 }
 @media (max-width: 390px) {
   .shop-layout .queue-heading h1 { font-size: 18px; }

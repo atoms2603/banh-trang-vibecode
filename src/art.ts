@@ -111,16 +111,24 @@ export function avatar(index: number): string {
 }
 
 export function guestSprite(index: number): string {
-  const { tint, skin } = profiles[index]
+  const { tint, skin, hair, style } = profiles[index]
   return `<svg aria-hidden="true" viewBox="0 0 54 68" class="guest-sprite">
     <ellipse cx="27" cy="65" rx="14" ry="2" fill="#bc8f73" opacity=".34"/>
     <g ${outlines}>
-      <path class="guest-leg left" d="M16 47h10l-1 14 3 2v2H15l1-5Z" fill="#887268"/>
-      <path class="guest-leg right" d="M27 47h10l1 13 4 3-1 2H28Z" fill="#97776b"/>
-      <path d="M14 39c-5 4-7 12-5 16l4 1 4-11m22-6c6 6 7 11 6 15l-4 2-5-12" fill="${skin}"/>
-      <path d="M15 35h24l2 14-5 5H18l-4-5Z" fill="${tint}"/>
-      <path d="M19 49h15" fill="none" opacity=".45"/>
-      <g transform="translate(5 -1) scale(.91)">${portrait(index)}</g>
+      <path class="guest-leg left" d="M19 47h9l-1 14-6 1-2 3H13v-4l5-2z" fill="#887268"/>
+      <path class="guest-leg right" d="M29 47h9v15l-4 3H22v-4l7-2z" fill="#97776b"/>
+      <path d="M21 33c-5 4-8 10-8 16l10 3 15-3-1-13-7-5z" fill="${tint}"/>
+      <path d="m29 38-2 14c0 4 6 5 7 1l2-14" fill="${skin}"/>
+      <path d="M20 11c-6 3-7 8-7 13l-4 3 5 3c0 7 5 9 14 8l8-7V15z" fill="${skin}"/>
+      <path d="M17 19C10 8 23 2 33 6c12 2 14 17 9 25l-6 5-5-5 2-11c-6 0-11-4-13-7z" fill="${hair}"/>
+      ${style === 'office' || style === 'neighbor' ? `<circle cx="42" cy="29" r="6" fill="${hair}"/>` : ''}
+      <path d="M30 25c5-3 7 4 2 6" fill="${skin}"/>
+      <path d="M17 23h.1" stroke-width="2.5"/>
+      <path d="M14 31c2 2 4 2 6 0" fill="none" stroke-width="1"/>
+      ${style === 'office' ? '<path d="M11 20h10v7H11zm10 2h10" fill="none" stroke-width="1.2"/>' : ''}
+      ${style === 'rider' ? '<path d="M15 17C11 4 38 0 42 15v7H27l-4-5z" fill="#5c9975"/><path d="M11 17h16m-4-7h9" fill="none"/>' : ''}
+      ${style === 'reviewer' ? '<path d="M15 15C16 3 34 3 39 15l-14 3H9l-4-3z" fill="#d38b65"/>' : ''}
+      ${style === 'school' ? '<path d="m32 11 5 2m-6 1 5 2" stroke="#f8d28c" stroke-width="2"/>' : ''}
     </g>
   </svg>`
 }
@@ -248,42 +256,6 @@ export function bowlArt(bowl?: Bowl): string {
   </svg>`
 }
 
-export function counterScene(level: Level): string {
-  return `<svg class="counter-art" aria-hidden="true" viewBox="0 0 400 145" preserveAspectRatio="none">
-    <path d="M0 0h400v145H0z" fill="#f7e4cf"/>
-    <path d="M0 25 37 13l33 16v71H0zm332 6 34-18 34 13v74h-68z" fill="#e8bfae"/>
-    <path d="M0 79h400v66H0z" fill="#ebcdb1"/>
-    <path d="M0 111h400m-400 17h400m-344-17-16 34m97-34-8 34m70-34v34m63-34 8 34m61-34 15 34"
-      fill="none" stroke="#d3a98b" stroke-width="1" opacity=".7"/>
-    <g ${outlines}>
-      <path d="M17 42h25v31H17zm344 1h22v29h-22z" fill="#efd2b7" stroke="#b18b73"/>
-      <path d="M29 43v29M17 56h25m330-12v27m-11-15h22" fill="none" stroke="#b18b73"/>
-      <path d="M68 27h264v69H68z" fill="#bd886a"/>
-      <path d="M78 35h244v44H78z" fill="#916650"/>
-      <path d="M83 42h234v34H83z" fill="#c78d6c"/>
-      <path d="M86 53h226m-226 9h226m-226 9h226" stroke="#b47b5f"/>
-      <path d="M72 86h255v24H72z" fill="#ca9471"/>
-      <path d="M72 98h255m-247 6h238" stroke="#a67155"/>
-      <path d="M67 78h266l5 7H62z" fill="#f2cb9e"/>
-      <path d="M62 85h276v5H62z" fill="#d69e78"/>
-      <path d="M146 33h108v18H146z" fill="#f5d8aa" stroke="#9a634c"/>
-      <text x="200" y="45" text-anchor="middle" fill="#774c39" stroke="none" font-size="8.4" font-weight="950" letter-spacing=".7">BÁNH TRÁNG TRỘN</text>
-      <path d="M98 33v10m0 18v5" fill="none"/>
-      <ellipse cx="98" cy="52" rx="9" ry="9" fill="#e9a177"/>
-      <path d="M96 44c-3 5-3 10 0 16m4-16c3 5 3 10 0 16" fill="none" stroke="#a96856"/>
-      ${cactus(290, 51, .62)}
-      ${cat(106, 57, .67)}
-      ${level >= 2 ? '<path d="M266 34c13 9 33 10 48 0" fill="none"/><path d="M273 38h.01m12 4h.01m11 0h.01m12-4h.01" stroke="#fbd68e" stroke-width="4"/>' : ''}
-      ${level >= 3 ? '<path d="M14 107 18 75h25l5 32z" fill="#526e57"/><path d="M22 83h17m-18 6h19m-20 6h20" stroke="#f3daad"/>' : ''}
-      <path d="M368 99V79m0 14c-5-9-9-12-13-14m13 12c4-8 8-12 14-14" fill="none" stroke="#6c865e"/>
-      <path d="M363 87c-8-1-11-5-11-12 7 1 11 7 11 12zm7-4c1-8 6-11 12-10-1 6-6 11-12 10z" fill="#93a679" stroke="#6f8a63"/>
-      <path d="m357 97 3 11h16l3-11z" fill="#e4a585"/>
-    </g>
-    <path d="M0 0h400v15c-4 15-24 16-33 3-9 13-24 13-34 0-9 13-24 13-33 0-9 13-24 13-33 0-9 13-25 13-34 0-9 13-24 13-33 0-9 13-24 13-33 0-9 13-25 13-34 0-9 13-24 13-33 0-9 13-24 13-33 0-9 13-25 13-34 0C23 30 4 30 0 15Z" fill="#f8e7d2" stroke="#9d6d58" stroke-width="1.2"/>
-    <path d="M0 0h33v18C23 30 4 30 0 15zm67 0h33v18c-9 13-24 13-33 0zm66 0h34v18c-9 13-25 13-34 0zm67 0h33v18c-9 13-24 13-33 0zm67 0h33v18c-9 13-24 13-33 0zm66 0h34v18c-9 13-24 13-34 0z" fill="#e69b9e"/>
-    <path d="M0 15h400" fill="none" stroke="#996650" opacity=".25"/>
-  </svg>`
-}
 
 const filledTrays: Partial<Record<IngredientId, string>> = {
   rice: riceStrips,

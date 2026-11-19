@@ -497,6 +497,50 @@ test('the selected order’s tray and mixing highlights follow the bowl’s prog
   assert.doesNotMatch(render(), cue('final-mix'))
 })
 
+test('sidewalk customers keep their order, selection and accessible dialogue', () => {
+  const state = setUp()
+  start(state)
+  const guest = currentCustomer(state)!
+  state.shift!.queue.push({ ...structuredClone(guest), id: guest.id + 1, profile: 2 })
+  const html = renderApp(state, {
+    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: guest.id,
+    modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+  })
+  const scene = html.slice(html.indexOf('class="queue-scene"'), html.indexOf('class="order-board"'))
+  assert.match(scene, /src="\.\/art\/ganh\.webp"/)
+  assert.doesNotMatch(scene, /counter-art|preserveAspectRatio="none"/)
+  assert.equal((scene.match(/id="customer-speech"/g) ?? []).length, 1)
+  assert.match(scene, /aria-pressed="true"[^>]*aria-describedby="customer-speech"/)
+  assert.ok(scene.indexOf('id="customer-speech"') < scene.indexOf('class="customers"'))
+  assert.ok(scene.indexOf(`data-action="customer" data-id="${guest.id}"`) < scene.indexOf(`data-action="customer" data-id="${guest.id + 1}"`))
+  assert.match(scene, new RegExp(`data-patience="${guest.id}"`))
+})
+
+test('waiting paper tickets stay between customers and preparation with their order details intact', () => {
+  const state = setUp()
+  start(state, () => .9)
+  const guest = currentCustomer(state)!
+  guest.order.noCilantro = true
+  gather(state, ['rice', 'kumquat', 'shrimpSalt'])
+  mix(state)
+  serve(state)
+  gather(state, ['rice'])
+  const html = renderApp(state, {
+    home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
+    modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+  })
+  assert.ok(html.indexOf('class="shop-front"') < html.indexOf('class="order-board"'))
+  assert.ok(html.indexOf('class="order-board"') < html.indexOf('class="prep-workspace"'))
+  assert.ok(html.indexOf('class="order-details"') < html.indexOf('class="kitchen"'))
+  const ticket = html.match(/<button type="button" class="order-receipt"[\s\S]*?<\/button>/)![0]
+  assert.match(ticket, new RegExp(`data-id="${guest.id}"`))
+  assert.match(ticket, /aria-current="true" aria-controls="order-details"/)
+  assert.match(ticket, /Đã giao 1\/2 bịch/)
+  assert.match(ticket, /Bỏ rau răm/)
+  assert.match(ticket, /16\.000đ/)
+  assert.match(ticket, /1\/3<\/span>/)
+})
+
 test('a topping-free order suggests the light mix immediately after the first mix', () => {
   const state = setUp()
   start(state)

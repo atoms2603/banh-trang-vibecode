@@ -1,0 +1,32 @@
+[
+  {
+    "name": "sidewalk",
+    "art_source": "host_image",
+    "route": "built-in ImageGen",
+    "original_size": [
+      2172,
+      724
+    ],
+    "runtime_size": [
+      1536,
+      512
+    ],
+    "sha256": "990a1399d2b87edd7d88e9a042f1c1afb779fe9913252b2c23302fec390ad883",
+    "bytes": 147732
+  },
+  {
+    "name": "ganh",
+    "art_source": "host_image",
+    "route": "built-in ImageGen",
+    "original_size": [
+      1448,
+      1086
+    ],
+    "runtime_size": [
+      640,
+      480
+    ],
+    "sha256": "7919c80f7ba588814d063cf80aa01787184670cbeae85a559f9dad1c0f5fa180",
+    "bytes": 79770
+  }
+]

@@ -168,22 +168,31 @@ function renderTutorial(): void {
   else reveal()
 }
 
-function sizeOrderDock(): void {
-  const dock = screen.querySelector<HTMLElement>('.order-dock')
-  const frame = screen.querySelector('.shop-layout .game-frame')
-  if (!dock || !frame) return
-  const style = getComputedStyle(dock)
-  if (style.position !== 'sticky') {
-    dock.style.removeProperty('--dock-visible-top')
-    return
+function positionCustomerSpeech(): void {
+  const speech = app.querySelector<HTMLElement>('#customer-speech')
+  const customer = screen.querySelector<HTMLButtonElement>('[data-action="customer"][aria-describedby="customer-speech"]')
+  const sprite = customer?.querySelector('.customer-sprite')
+  if (!speech || !customer || !sprite) return
+  // Keep the bubble outside the scene's clipped artwork and entrance animations.
+  if (speech.parentElement !== app) app.append(speech)
+  const anchor = sprite.getBoundingClientRect()
+  speech.hidden = anchor.bottom <= 0 || anchor.top >= window.innerHeight
+  if (speech.hidden) return
+  const { width, height } = speech.getBoundingClientRect()
+  const center = anchor.left + anchor.width / 2
+  const left = Math.max(8, Math.min(center - width / 2, window.innerWidth - width - 8))
+  const above = anchor.top >= height + 16
+  speech.style.left = left + 'px'
+  speech.style.top = (above ? anchor.top - height - 8 : Math.min(anchor.bottom + 8, window.innerHeight - height - 8)) + 'px'
+  speech.style.setProperty('--arrow-x', Math.max(8, Math.min(center - left, width - 8)) + 'px')
+  speech.dataset.placement = above ? 'above' : 'below'
+  if (customer.getAnimations().some(animation => animation.pending || animation.playState === 'running')) {
+    requestAnimationFrame(positionCustomerSpeech)
   }
-  const stickyTop = Number.parseFloat(style.top)
-  const visibleTop = Math.max(stickyTop, frame.getBoundingClientRect().top)
-  dock.style.setProperty('--dock-visible-top', visibleTop + 'px')
 }
 
 function updateLayout(): void {
-  sizeOrderDock()
+  positionCustomerSpeech()
   positionTutorial()
 }
 
@@ -203,9 +212,11 @@ function renderScreen(move = false): void {
   options.previousCustomers = new Set(Array.from(screen.querySelectorAll<HTMLElement>('[data-action=customer]'),
     customer => Number(customer.dataset.id)))
   const orderScroll = screen.querySelector<HTMLElement>('.order-sheet')?.scrollTop ?? 0
+  const orderScrollLeft = screen.querySelector<HTMLElement>('.order-sheet')?.scrollLeft ?? 0
   const shopScroll = screen.querySelector<HTMLElement>('.shop-screen')?.scrollTop ?? 0
   const previousDetails = screen.querySelector<HTMLElement>('.order-details')
   const detailScroll = previousDetails?.scrollTop ?? 0
+  app.querySelector(':scope > .customer-speech')?.remove()
   screen.innerHTML = renderApp(state, options)
   if (move) {
     window.scrollTo(0, 0)
@@ -216,12 +227,14 @@ function renderScreen(move = false): void {
     }
   } else if (active) restoreFocus(screen, active)
   const sheet = screen.querySelector<HTMLElement>('.order-sheet')
-  if (sheet) sheet.scrollTop = orderScroll
+  if (sheet) {
+    sheet.scrollTop = orderScroll
+    sheet.scrollLeft = orderScrollLeft
+  }
   const shop = screen.querySelector<HTMLElement>('.shop-screen')
   if (shop && !move) shop.scrollTop = shopScroll
   const details = screen.querySelector<HTMLElement>('.order-details')
   if (details && details.dataset.orderId === previousDetails?.dataset.orderId) details.scrollTop = detailScroll
-  sizeOrderDock()
   renderTutorial()
   updateLayout()
 }
@@ -286,38 +299,11 @@ function announceDeparture(profile: number, text: string, durationMs = 1700): vo
   }, durationMs)
 }
 
-const coinSpread = [
-  [-44, -36, 22, 0], [-30, -49, -42, 18], [-12, -33, 37, 44],
-  [13, -53, -34, 32], [32, -48, 31, 16], [46, -29, -21, 4],
-] as const
-
-function paymentSource(customerId: number): DOMRect | undefined {
-  const sprite = screen.querySelector('[data-action="customer"][data-id="' + customerId + '"] .customer-sprite')
-  const register = screen.querySelector('.status-cash')
-  if (!sprite || !register) return undefined
-  const registerBounds = register.getBoundingClientRect()
-  const spriteBounds = sprite.getBoundingClientRect()
-  if (registerBounds.top < 0 || spriteBounds.bottom > window.innerHeight) window.scrollTo(0, 0)
-  return sprite.getBoundingClientRect()
-}
-
-function showPayment(origin: DOMRect, amount: number): void {
-  const register = screen.querySelector('.status-cash')
-  if (!register) return
-  const target = register.getBoundingClientRect()
-  const x = origin.left + origin.width / 2
-  const y = origin.top + origin.height / 2
+function showPayment(amount: number): void {
   const burst = document.createElement('div')
   burst.className = 'payment-burst'
   burst.setAttribute('aria-hidden', 'true')
-  burst.style.left = x + window.scrollX + 'px'
-  burst.style.top = y + window.scrollY + 'px'
-  burst.style.setProperty('--cash-x', target.left + target.width / 2 - x + 'px')
-  burst.style.setProperty('--cash-y', target.top + target.height / 2 - y + 'px')
-  burst.innerHTML = coinSpread.map(([dx, dy, spin, delay]) => {
-    const spreadX = Math.max(10 - x, Math.min(dx, window.innerWidth - x - 10))
-    return `<span class="payment-coin" style="--coin-x:${spreadX}px;--coin-y:${dy}px;--coin-spin:${spin}deg;--coin-delay:${delay}ms">${icon('coin', 17)}</span>`
-  }).join('') + `<strong class="payment-amount">+${money(amount)}</strong>`
+  burst.innerHTML = `<strong class="payment-amount">${icon('coin', 22)} +${money(amount)}</strong>`
   burst.querySelector('.payment-amount')?.addEventListener('animationend', () => {
     if (state?.phase !== 'shop' || options.home) return
     const currentRegister = screen.querySelector('.status-cash')
@@ -451,7 +437,7 @@ function handle(button: HTMLButtonElement): void {
   const rewardedBefore = state.daily?.missions.filter(task => task.rewarded).length ?? 0
   let result: { ok: boolean; message: string; departureText?: string } | undefined
   let move = false
-  let payment: { amount: number; origin?: DOMRect } | undefined
+  let payment: number | undefined
   switch (action) {
     case 'buy': result = purchase(state, id ?? ''); break
     case 'toggle-dish': if (dish) result = toggleDish(state, dish); break
@@ -491,7 +477,7 @@ function handle(button: HTMLButtonElement): void {
     case 'deliver':
       result = deliver(state)
       if (result.ok && guest) {
-        payment = { amount: state.cash - cashBefore, origin: paymentSource(guest.id) }
+        payment = state.cash - cashBefore
         sound('serve', muted())
         if (guest.servedPortions.length === guest.order.quantity) announceDeparture(guest.profile, result.departureText ?? 'Đã nhận đủ món!', result.departureText ? 3500 : 1700)
         options.heatOpen = false
@@ -513,13 +499,13 @@ function handle(button: HTMLButtonElement): void {
     persist()
   }
   let message = result.message
-  if (payment) message += ' · +' + money(payment.amount)
+  if (payment !== undefined) message += ' · +' + money(payment)
   if (state.reputation > xpBefore) message += ' · +' + (state.reputation - xpBefore) + ' EXP'
   if ((state.daily?.missions.filter(task => task.rewarded).length ?? 0) > rewardedBefore) message += ' · Xong nhiệm vụ!'
   if (completedLesson) message += ' · Xong hướng dẫn!'
   flash(message, result.ok)
   renderScreen(move)
-  if (payment?.origin) showPayment(payment.origin, payment.amount)
+  if (payment !== undefined) showPayment(payment)
 }
 
 app.addEventListener('click', event => {
