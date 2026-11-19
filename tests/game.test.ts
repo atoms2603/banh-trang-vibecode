@@ -145,10 +145,11 @@ test('rejects stockouts, protects the current order, and accounts for a timed-ou
   const firstId = currentCustomer(state)!.id
   gather(state, ['rice'])
   assert.equal(addIngredient(state, 'cilantro').ok, false)
-  tick(state, 12000, first)
+  const wait = state.shift!.nextArrivalMs - state.shift!.elapsedMs + 1
+  tick(state, wait, first)
   const second = state.shift!.queue[1]
   assert.equal(selectCustomer(state, second.id).ok, false)
-  tick(state, PATIENCE_MS - 12000, first)
+  tick(state, PATIENCE_MS - wait, first)
   assert.equal(state.shift?.queue.some(guest => guest.id === firstId), false)
   assert.equal(state.shift?.activeId, second.id)
   assert.equal(state.tally.lost, 1)
@@ -226,14 +227,17 @@ test('purchases, use, waste, spoilage, tax and cash reconcile across days and we
   const week = sumReports(state.reports)!
   assert.equal(week.sold, 2)
   assert.equal(week.sales.salt?.count, 2)
-  assert.equal(week.revenue, 16000)
-  assert.equal(week.tax, 480)
+  assert.equal(week.revenue, 17500)
+  assert.equal(week.tips, 1500)
+  assert.equal(week.tax, 525)
   assert.equal(week.cashDelta, state.cash - 150000)
 })
 
 test('reputation unlocks four levels, staff and the alternate packaging', () => {
   const state = newGame()
   for (const [quantity, nextLevel, cost] of [[10, 2, 15000], [20, 3, 25000], [20, 3, 35000], [10, 4, 35000]]) {
+    // Isolate the original review-based unlock path, as in an upgraded open shift.
+    state.daily = null
     for (const id of ['rice', 'shrimpSalt', 'kumquat', 'pack'] as const) {
       while (state.inventory[id] < quantity) assert.equal(purchase(state, id).ok, true)
     }
@@ -517,7 +521,7 @@ test('a legacy save credits unpaid sales once and leaves settled days intact', (
   // In the old save, the sale belonged to the tally but had yet to reach the register.
   const legacy = { ...state, version: 1, cash: 105000 }
   const migrated = parseSave(JSON.stringify(legacy))!
-  assert.deepEqual(migrated, state)
+  assert.deepEqual(migrated, { ...state, daily: null, tally: { ...state.tally, completedOrders: 0, tips: 0, xpEarned: 0 } })
   assert.equal(migrated.cash, 113000)
   assert.deepEqual(parseSave(JSON.stringify(migrated)), migrated)
 
@@ -656,7 +660,7 @@ test('old single-bag saves migrate without adding sales and invalid group progre
   legacy.version = 4
   delete legacy.shift.queue[0].order.quantity
   delete legacy.shift.queue[0].servedPortions
-  assert.deepEqual(parseSave(JSON.stringify(legacy)), state)
+  assert.deepEqual(parseSave(JSON.stringify(legacy)), { ...state, daily: null })
 
   const guest = currentCustomer(state)!
   for (const quantity of [0, 4]) {

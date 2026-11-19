@@ -2,6 +2,7 @@ import { profiles } from './data.ts'
 import type { Bowl, IngredientId, Level } from './types.ts'
 
 const icons = {
+  bell: '<path d="M6 9a6 6 0 0 1 12 0v5l2 3H4l2-3zm4 11h4M12 2v1"/>',
   storefront: '<path d="M3 10v10h18V10M2 10l2-6h16l2 6M2 10c0 3 4 3 5 0 1 3 4 3 5 0 1 3 4 3 5 0 1 3 5 3 5 0M9 20v-6h6v6M8 4l-1 6m9-6 1 6"/>',
   volume: '<path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
   muted: '<path d="M3 9h4l5-4v14l-5-4H3zM16 9l5 6m0-6-5 6"/>',

@@ -1,18 +1,20 @@
-import { heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles } from './data.ts'
-import { defaultPrice, emptyTally, hasStock, money, priceBand, priceOf, settleDay, tallySale } from './economy.ts'
+import { engagementRules, heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, regularStories } from './data.ts'
+import { addExperience, defaultPrice, emptyTally, hasStock, money, priceBand, priceOf, settleDay, tallySale } from './economy.ts'
+import { completeVisit, createDailyActivity, createStories, currentShiftPhase, shiftNotice } from './engagement.ts'
 import { reviewLine } from './reviews.ts'
 import { advanceTutorial, currentLesson } from './tutorial.ts'
-import type { Bowl, Customer, DepartureReason, GameState, Heat, IngredientId, Inventory, Level, MenuId, Order, Packaging, Recipe, ReplyId, Stars } from './types.ts'
+import type { Bowl, Customer, DepartureReason, GameState, Heat, IngredientId, Inventory, Level, MenuId, Order, Packaging, Recipe, ReplyId, SpecialKind, Stars } from './types.ts'
 
 export const OPEN_MINUTE = 8 * 60
 export const CLOSE_MINUTE = 21 * 60
-export const SHIFT_MS = 240_000
-export const PATIENCE_MS = 70_000
-const EXTRA_PORTION_PATIENCE_MS = 18_000
+export const SHIFT_MS = engagementRules.shiftDurationMs
+export const PATIENCE_MS = engagementRules.patienceMs
+const EXTRA_PORTION_PATIENCE_MS = engagementRules.extraPortionPatienceMs
 
 interface Result {
   ok: boolean
   message: string
+  departureText?: string
 }
 
 function success(message = ''): Result {
@@ -29,11 +31,11 @@ function emptyBowl(): Bowl {
 
 export function newGame(guided = false): GameState {
   return {
-    version: 5, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
+    version: 6, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
     inventory: Object.fromEntries(ingredientIds.map(id => [id, 0])) as Inventory,
     menu: Object.fromEntries(menuIds.map(id => [id, { enabled: !guided && id === 'salt', price: defaultPrice(id) }])) as GameState['menu'],
     reviews: [], reports: [], staff: false, muted: false, nextCustomerId: 1,
-    tally: emptyTally(), shift: null,
+    tally: emptyTally(), shift: null, daily: createDailyActivity(1, 1), stories: createStories(),
   }
 }
 
@@ -81,12 +83,23 @@ export function openingProblem(state: GameState): string {
   return missing ? 'Chưa đủ hàng cho ' + menu[missing].name.toLocaleLowerCase('vi') + '.' : ''
 }
 
-export function openShop(state: GameState): Result {
+export function openShop(state: GameState, random: () => number = Math.random): Result {
   if (state.phase !== 'prep') return problem('Tiệm đã qua giờ chuẩn bị.')
   const warning = openingProblem(state)
   if (warning) return problem(warning)
   state.phase = 'shop'
-  state.shift = { elapsedMs: 0, nextArrivalMs: 900, queue: [], activeId: null, bowl: emptyBowl() }
+  state.shift = { elapsedMs: 0, nextArrivalMs: engagementRules.firstArrivalMs, queue: [], activeId: null, bowl: emptyBowl() }
+  if (state.daily && state.day >= engagementRules.specialStartDay && random() < engagementRules.specialChance) {
+    const candidates = specialDishes(state)
+    if (candidates.length) {
+      const hasCrunch = candidates.some(id => menu[id].recipe.peanut || menu[id].recipe.shallot)
+      const kind: SpecialKind = hasCrunch && random() < .5 ? 'crispy' : 'perfect'
+      state.daily.special = {
+        kind, atMs: engagementRules.specialStartMs + Math.floor(random() * (engagementRules.specialEndMs - engagementRules.specialStartMs + 1)),
+        status: 'pending',
+      }
+    }
+  }
   return success()
 }
 
@@ -205,7 +218,7 @@ function recordReview(state: GameState, customer: Customer, stars: Stars, text: 
   state.reviews.push({ customerId: customer.id, profile: customer.profile, day: state.day, stars, text, ...(departureReason ? { departureReason } : {}) })
   state.tally.stars += stars
   state.tally.reviewCount++
-  if (stars >= 3) state.reputation += stars - 1
+  if (stars >= 3) addExperience(state, stars - 1)
 }
 
 function leaveQueue(state: GameState, customer: Customer, fulfilled: boolean): void {
@@ -302,17 +315,19 @@ export function deliver(state: GameState): Result {
   }
   const stars = Math.round(customer.servedPortions.reduce((sum, portion) => sum + portion.stars, 0) / customer.order.quantity) as Stars
   const feedback = customer.servedPortions.reduce((worst, portion) => portion.stars < worst.stars ? portion : worst)
+  state.tally.completedOrders++
   recordReview(state, customer, stars, feedback.text)
+  const departureText = completeVisit(state, customer, stars, patienceLeft(state, customer), bowl)
   leaveQueue(state, customer, true)
-  return success(profiles[customer.profile].name + ' đã nhận món · ' + stars + ' ★')
+  return { ...success(profiles[customer.profile].name + ' đã nhận món · ' + stars + ' ★'), departureText }
 }
 
 export function replyToReview(state: GameState, customerId: number, reply: ReplyId): Result {
   const review = state.reviews.find(entry => entry.customerId === customerId)
   if (!review || review.reply) return problem('Đánh giá này đã được phản hồi.')
   review.reply = reply
-  if (review.stars <= 2) state.reputation++
-  return success(review.stars <= 2 ? 'Đã gửi phản hồi · +1 danh tiếng.' : 'Đã gửi phản hồi.')
+  if (review.stars <= 2) addExperience(state, 1)
+  return success(review.stars <= 2 ? 'Đã gửi phản hồi · +1 EXP.' : 'Đã gửi phản hồi.')
 }
 
 export function makeOrder(state: GameState, dish: MenuId, random: () => number): Order {
@@ -327,6 +342,35 @@ export function makeOrder(state: GameState, dish: MenuId, random: () => number):
   return { dish, quantity: 1, price, recipe, heat, noCilantro, extraMango, pricey: priceBand(dish, price) === 'high' }
 }
 
+function makeCustomer(state: GameState, dish: MenuId, profile: number, random: () => number, special?: SpecialKind): Customer {
+  const shift = state.shift!
+  const customer: Customer = {
+    id: state.nextCustomerId++,
+    profile,
+    arrivalMs: shift.elapsedMs,
+    patienceMs: PATIENCE_MS,
+    order: makeOrder(state, dish, random),
+    servedPortions: [],
+    ...(special ? { special } : {}),
+  }
+  if (!special && !currentLesson(state)) {
+    const roll = random()
+    const desired = roll < 0.8 ? 1 : roll < 0.96 ? 2 : 3
+    const available = Math.min(...ingredientIds.filter(id => customer.order.recipe[id])
+      .map(id => Math.floor(state.inventory[id] / customer.order.recipe[id]!)))
+    customer.order.quantity = Math.min(desired, available) as Order['quantity']
+    const progress = state.stories[profile]
+    const chapter = regularStories[profile]?.chapters[progress?.stage]
+    if (state.daily && state.day >= engagementRules.regularStartDay && chapter && progress.lastVisitDay < state.day && available >= chapter.quantity) {
+      customer.storyStage = progress.stage
+      customer.order.quantity = chapter.quantity
+      progress.lastVisitDay = state.day
+    }
+    customer.patienceMs += (customer.order.quantity - 1) * EXTRA_PORTION_PATIENCE_MS
+  }
+  return customer
+}
+
 function spawnCustomer(state: GameState, random: () => number): boolean {
   const shift = state.shift
   if (!shift) return false
@@ -335,30 +379,15 @@ function spawnCustomer(state: GameState, random: () => number): boolean {
     shift.nextArrivalMs = shift.elapsedMs + 2000
     return false
   }
-
   const options = dishes.flatMap(id => priceBand(id, state.menu[id].price) === 'low' ? [id, id] : [id])
   const dish = options[Math.floor(random() * options.length)]
-  const freeProfiles = profiles.map((_, index) => index).filter(index => !shift.queue.some(customer => customer.profile === index))
-  const customer: Customer = {
-    id: state.nextCustomerId++,
-    profile: freeProfiles[Math.floor(random() * freeProfiles.length)],
-    arrivalMs: shift.elapsedMs,
-    patienceMs: PATIENCE_MS,
-    order: makeOrder(state, dish, random),
-    servedPortions: [],
-  }
-  if (!currentLesson(state)) {
-    const roll = random()
-    const desired = roll < 0.8 ? 1 : roll < 0.96 ? 2 : 3
-    const available = Math.min(...ingredientIds.filter(id => customer.order.recipe[id])
-      .map(id => Math.floor(state.inventory[id] / customer.order.recipe[id]!)))
-    customer.order.quantity = Math.min(desired, available) as Order['quantity']
-    customer.patienceMs += (customer.order.quantity - 1) * EXTRA_PORTION_PATIENCE_MS
-  }
+  const freeProfiles = profiles.map((_, index) => index).filter(index => !shift.queue.some(customer => customer.profile === index)
+    && !(state.daily?.special && index === engagementRules.specialProfile))
+  const customer = makeCustomer(state, dish, freeProfiles[Math.floor(random() * freeProfiles.length)], random)
 
   const baseInterval = [0, 10800, 9500, 8300, 7300][state.level]
   const busy = priceBand(dish, customer.order.price) === 'low'
-  shift.nextArrivalMs = shift.elapsedMs + (baseInterval + random() * 1500) * (busy ? 0.72 : 1)
+  shift.nextArrivalMs = shift.elapsedMs + (baseInterval + random() * 1500) * (busy ? 0.72 : 1) * currentShiftPhase(state).intervalFactor
   if (customer.order.pricey && random() < 0.45) {
     loseCustomer(state, customer, 'priceRefusal', customer.id % 2 ? 1 : 2)
     return true
@@ -369,8 +398,37 @@ function spawnCustomer(state: GameState, random: () => number): boolean {
   return true
 }
 
+function specialDishes(state: GameState, kind?: SpecialKind): MenuId[] {
+  return enabledDishes(state).filter(id => hasStock(state.inventory, menu[id].recipe)
+    && priceBand(id, state.menu[id].price) !== 'high'
+    && (kind !== 'crispy' || Boolean(menu[id].recipe.peanut || menu[id].recipe.shallot)))
+}
+
+function spawnSpecial(state: GameState, random: () => number): boolean {
+  const schedule = state.daily?.special
+  const shift = state.shift
+  if (!shift || schedule?.status !== 'pending') return false
+  if (shift.elapsedMs > engagementRules.specialEndMs) {
+    schedule.status = 'skipped'
+    return true
+  }
+  if (shift.elapsedMs < schedule.atMs || shift.queue.length >= (state.level === 1 ? 3 : 4)
+    || shift.queue.some(customer => customer.profile === engagementRules.specialProfile)) return false
+  const dishes = specialDishes(state, schedule.kind)
+  if (!dishes.length) return false
+  const dish = dishes[Math.floor(random() * dishes.length)]
+  const customer = makeCustomer(state, dish, engagementRules.specialProfile, random, schedule.kind)
+  shift.queue.push(customer)
+  shift.activeId ??= customer.id
+  schedule.status = 'arrived'
+  // Keep the special arrival separate from the next regular arrival.
+  shift.nextArrivalMs = Math.max(shift.nextArrivalMs, shift.elapsedMs + 2000)
+  return true
+}
+
 export function closeShop(state: GameState): boolean {
   if (state.phase !== 'shop' || !state.shift || state.reports.some(report => report.day === state.day)) return false
+  if (state.daily?.special?.status === 'pending') state.daily.special.status = 'skipped'
   for (const customer of [...state.shift.queue]) loseCustomer(state, customer, 'closed')
   trashBowl(state)
   const closedAt = shopMinute(state)
@@ -385,6 +443,8 @@ export function tick(state: GameState, elapsed: number, random: () => number = M
   const shift = state.shift
   if (!shift || state.phase !== 'shop' || elapsed <= 0) return false
   const guided = Boolean(currentLesson(state))
+  const previousNotice = shiftNotice(state)
+  const previousPhase = currentShiftPhase(state).id
   // Let the first guest arrive, then give the player time to learn the controls.
   const limit = guided ? shift.queue.length ? shift.elapsedMs : shift.nextArrivalMs : SHIFT_MS
   const delta = Math.min(elapsed, Math.max(0, limit - shift.elapsedMs))
@@ -405,7 +465,11 @@ export function tick(state: GameState, elapsed: number, random: () => number = M
     loseCustomer(state, customer, 'timeout')
     changed = true
   }
-  if (shift.elapsedMs >= shift.nextArrivalMs) changed = spawnCustomer(state, random) || changed
+  if (!guided) {
+    changed = spawnSpecial(state, random) || changed
+    if (currentShiftPhase(state).intervalFactor > 0 && shift.elapsedMs >= shift.nextArrivalMs) changed = spawnCustomer(state, random) || changed
+  } else if (!shift.queue.length && shift.elapsedMs >= shift.nextArrivalMs) changed = spawnCustomer(state, random) || changed
+  if (previousNotice?.id !== shiftNotice(state)?.id || previousPhase !== currentShiftPhase(state).id) changed = true
   return changed
 }
 
@@ -413,11 +477,12 @@ export function nextDay(state: GameState): Result {
   if (state.phase !== 'report') return problem('Chốt ngày trước khi mở ca mới.')
   const oldLevel = state.level
   for (const level of [2, 3, 4] as Level[]) {
-    if (state.reputation >= levels[level].threshold) state.level = level
+    if (level > state.level && state.reputation >= levels[level].threshold) state.level = level
   }
   state.day++
   state.phase = 'prep'
   state.tally = emptyTally()
+  state.daily = createDailyActivity(state.day, state.level)
   return success(state.level > oldLevel ? 'Tiệm lên cấp ' + state.level + '! Có món và nguyên liệu mới ở chợ.' : '')
 }
 

@@ -217,6 +217,42 @@ h1, h2, h3, p { margin: 0; }
   white-space: nowrap;
 }
 .status-strip .status-grade { background: #edf0df; border-color: #d9e0cb; color: #4f654a; }
+.activity-hud { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 12px; flex-shrink: 0; }
+.shift-notice { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border-radius: 8px; background: #edf0df; color: #526448; font-size: 11px; font-weight: 900; animation: phase-in .3s ease-out; }
+.phase-warning { background: #ffe7cf; color: #8b4f28; font-variant-numeric: tabular-nums; }
+.special-arrival-alert { display: inline-flex; padding: 6px; border-radius: 8px; background: #fff0bf; color: #875c26; }
+.xp-status { flex: 1 1 160px; min-width: 140px; max-width: 260px; font-size: 10px; }
+.xp-status > span { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.xp-track { height: 6px; background: #e9dfd0; border-radius: 6px; overflow: hidden; }
+.xp-track i { display: block; height: 100%; background: #ab6480; border-radius: inherit; }
+.xp-ready { color: #526448; font-weight: 900; }
+.xp-ready .xp-track i { background: #7b9964; }
+.xp-unlock { display: block; margin-top: 4px; font-size: 10px; }
+.mission-chips { display: flex; flex: 1 1 190px; gap: 6px; }
+.mission-chip { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid #dfc5a7; border-radius: 9px; background: #fff4dc; padding: 7px 8px; font-size: 11px; color: #71523e; }
+.mission-chip.complete { background: #ecf0df; border-color: #b6c6a1; color: #526448; }
+.mission-chip b { white-space: nowrap; }
+.mission-details { display: grid; gap: 12px; }
+.mission-detail { padding: 14px; border: 1px solid #dec5a7; border-radius: 12px; background: #fff8e8; }
+.mission-detail h3 { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 6px; font-size: 15px; }
+.mission-detail p, .mission-help { font-size: 13px; line-height: 1.5; }
+.mission-detail progress { width: 100%; height: 9px; accent-color: #a65f78; margin: 8px 0; }
+.mission-detail > span { display: block; font-size: 12px; font-weight: 800; }
+.mission-detail.complete { background: #eef1e4; }
+.mission-report { margin-block: 16px; }
+.mission-report > h3 { margin-bottom: 8px; }
+.special-request { display: grid; gap: 4px; padding: 8px; margin-top: 7px; border: 1px dashed #b9863d; border-radius: 7px; background: #fff0c6; font-size: 12px; }
+.special-request span { font-size: 11px; line-height: 1.4; }
+.receipt-challenge { color: #956225; font-size: 11px; font-weight: 900; }
+.departure span { max-width: min(230px, 65vw); line-height: 1.45; }
+@keyframes phase-in { from { opacity: .4; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (min-width: 700px) { .shop-screen > .activity-hud { width: min(100%, 760px); margin-inline: auto; } }
+@media (max-height: 540px) and (orientation: landscape) {
+  .shop-screen > .activity-hud { gap: 5px; margin-bottom: 2px; }
+  .shop-screen .xp-status { flex-basis: 120px; min-width: 100px; }
+  .shop-screen .mission-chip, .shop-screen .shift-notice { font-size: 10px; padding: 5px; }
+}
+@media (prefers-reduced-motion: reduce) { .shift-notice { animation: none; } }
 .status-strip .status-cash {
   margin-left: auto;
   background: #fae9c9;
@@ -506,7 +542,7 @@ h1, h2, h3, p { margin: 0; }
   right: 7px;
   bottom: 11px;
   pointer-events: none;
-  animation: walk-away 1.7s ease-in both;
+  animation: walk-away var(--departure-duration, 1.7s) ease-in both;
 }
 .departure span { font-size: 10px; font-weight: 900; background: #fff7e9; border: 1px solid #d5a690; border-radius: 7px; padding: 4px 6px; }
 .departure div { width: 47px; height: 61px; }
@@ -697,6 +733,7 @@ h1, h2, h3, p { margin: 0; }
   gap: 6px;
   margin-top: 2px;
 }
+.kitchen { container: kitchen / inline-size; }
 .ingredient-bank {
   padding: 6px;
   background: repeating-linear-gradient(2deg, #edd3af 0 21px, #efd9bb 22px 24px);
@@ -1145,18 +1182,24 @@ h1, h2, h3, p { margin: 0; }
   .shop-layout .tray-contents { width: min(100%, 54px); }
   .shop-layout .ingredient-bank { padding: 9px; }
   .shop-layout .ingredient-bank h3 { font-size: 13px; }
-  .shop-layout .ingredient-station { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .shop-layout .ingredient-station { align-items: stretch; }
   .shop-layout .mix-controls > .button, .shop-layout .pack-controls .button { min-height: 44px; }
   .shop-layout .serve-button { min-height: 48px; }
   .order-ingredient { width: 42px; height: 40px; }
   .order-ingredient .tray-contents { width: 36px; height: 34px; }
 }
 
+/* Share a row only when the cooking counter has room for both sets of trays. */
+@container kitchen (min-width: 680px) {
+  .shop-layout .ingredient-station { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (min-width: 900px), (min-width: 560px) and (orientation: landscape) and (max-height: 600px) {
   .standalone-layout .home-screen {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: 1fr auto auto;
+    grid-template-rows: repeat(3, auto);
+    align-content: center;
     align-items: center;
     gap: 12px 24px;
     padding: 24px;
@@ -1194,6 +1237,7 @@ h1, h2, h3, p { margin: 0; }
     scroll-padding-block: 8px;
   }
   .shop-screen > .status-strip { flex: 0 0 auto; flex-wrap: wrap; }
+  .shop-screen > .activity-hud { margin-top: 0; }
   .shop-screen .shop-front, .shop-screen .kitchen {
     flex: 0 0 auto;
     width: min(100%, 760px);

@@ -12,6 +12,38 @@ export type Heat = 0 | 1 | 2 | 3
 export type Stars = 1 | 2 | 3 | 4 | 5
 export type Packaging = 'bag' | 'box'
 export type ReplyId = 'polite' | 'friendly' | 'voucher'
+export type MissionKind = 'orders' | 'perfect' | 'quick' | 'good'
+export type SpecialKind = 'perfect' | 'crispy'
+
+export interface Reward {
+  cash: number
+  xp: number
+}
+
+export interface DailyMission extends Reward {
+  kind: MissionKind
+  target: number
+  progress: number
+  rewarded: boolean
+}
+
+export interface DailyActivity {
+  day: number
+  missions: DailyMission[]
+  special: { atMs: number; kind: SpecialKind; status: 'pending' | 'arrived' | 'skipped' } | null
+}
+
+export interface StoryProgress {
+  stage: number
+  lastVisitDay: number
+}
+
+export interface StoryChapter {
+  quantity: 1 | 2 | 3
+  greeting: string
+  goodReply: string
+  poorReply: string
+}
 
 export interface Ingredient {
   name: string
@@ -61,6 +93,8 @@ export interface Customer {
   patienceMs: number
   order: Order
   servedPortions: Array<{ stars: Stars; text: string }>
+  storyStage?: number
+  special?: SpecialKind
 }
 
 export type DepartureReason = 'priceRefusal' | 'timeout' | 'closed'
@@ -99,6 +133,9 @@ export interface DayTally {
   purchases: number
   stars: number
   reviewCount: number
+  completedOrders: number
+  tips: number
+  xpEarned: number
 }
 
 export interface Shift {
@@ -110,6 +147,7 @@ export interface Shift {
 }
 
 export interface DailyReport extends DayTally {
+  missions: DailyMission[]
   day: number
   closedAt?: number
   level: Level
@@ -125,7 +163,7 @@ export interface DailyReport extends DayTally {
 }
 
 export interface GameState {
-  version: 5
+  version: 6
   tutorialStep?: number
   phase: Stage
   day: number
@@ -141,4 +179,6 @@ export interface GameState {
   nextCustomerId: number
   tally: DayTally
   shift: Shift | null
+  daily: DailyActivity | null
+  stories: Record<number, StoryProgress>
 }

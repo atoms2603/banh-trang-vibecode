@@ -1,11 +1,12 @@
 import { avatar, bowlArt, counterScene, food, guestSprite, icon, storefront, trayContents } from './art.ts'
-import { heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, replies, staffWage } from './data.ts'
+import { heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, replies, staffWage, missionLabels, regularStories, specialChallenges } from './data.ts'
+import { currentShiftPhase, shiftNotice } from './engagement.ts'
 import { hasStock, money, priceBand, priceOf, sumReports } from './economy.ts'
 import { canDeliver, CLOSE_MINUTE, currentCustomer, enabledDishes, formatShopTime, marketUnlocked, mixProgress, OPEN_MINUTE, openingProblem, patienceLeft, shopTime } from './game.ts'
-import type { Bowl, Customer, DailyReport, GameState, IngredientId, MenuId, Order, ReplyId } from './types.ts'
+import type { Bowl, Customer, DailyMission, DailyReport, GameState, IngredientId, Level, MenuId, Order, ReplyId } from './types.ts'
 import { currentLesson } from './tutorial.ts'
 
-export type Modal = 'help' | 'reviews' | 'reset' | 'ledger' | 'close-shop' | null
+export type Modal = 'help' | 'reviews' | 'reset' | 'ledger' | 'close-shop' | 'missions' | null
 export interface ScreenOptions {
   home: boolean
   initialMute: boolean
@@ -18,7 +19,7 @@ export interface ScreenOptions {
   reportPeriod: 'day' | 'week'
   reportDay: number
   warning: string
-  departure: { profile: number; text: string } | null
+  departure: { profile: number; text: string; durationMs: number } | null
 }
 
 function escape(value: string): string {
@@ -77,12 +78,29 @@ function homeScreen(state: GameState | null): string {
 }
 
 function statusStrip(state: GameState, shop: boolean): string {
+  const nextLevel = Math.min(4, state.level + 1) as Level
+  const threshold = levels[nextLevel].threshold
+  const ready = state.level < 4 && state.reputation >= threshold
+  const percent = state.level === 4 ? 100 : Math.min(100, state.reputation / threshold * 100)
+  const notice = shiftNotice(state)
   return `<div class="status-strip">
      <span class="status-day">${icon('calendar', 16)} Ngày ${state.day}</span>
      <span class="status-grade">${shop ? icon('clock', 16) : icon('storefront', 16)} <span ${shop ? 'data-clock' : ''}>${shop ? shopTime(state) : 'Cấp ' + state.level}</span></span>
      ${shop ? `<span class="status-close">Đóng lúc ${formatShopTime(CLOSE_MINUTE)}</span>` : ''}
      <span class="status-cash">${icon('coin', 17)} <strong>${money(state.cash)}</strong></span>
+  </div>
+  <div class="activity-hud">
+    ${shop && notice?.id === 'warning' ? `<span class="shift-notice phase-warning" role="status">${icon('bell', 14)} <span data-rush-countdown>${notice.label}</span></span>` : ''}
+    <div class="xp-status${ready ? ' xp-ready' : ''}"><span>Cấp ${state.level} <b>${state.reputation}${state.level < 4 ? '/' + threshold : ''} EXP</b></span>
+      <div class="xp-track" role="progressbar" aria-label="EXP của tiệm" aria-valuemin="0" aria-valuemax="${state.level === 4 ? Math.max(1, state.reputation) : threshold}" aria-valuenow="${state.level === 4 ? state.reputation : Math.min(threshold, state.reputation)}"><i style="width:${percent}%"></i></div>
+      ${ready ? '<small class="xp-unlock">Đủ EXP lên cấp</small>' : ''}
+    </div>
+    ${state.daily ? `<div class="mission-chips" aria-label="Nhiệm vụ hôm nay">${state.daily.missions.map(task => `<button type="button" data-action="missions" class="mission-chip${task.rewarded ? ' complete' : ''}" aria-label="${missionLabels[task.kind].detail}: ${task.progress}/${task.target}, ${task.rewarded ? 'đã nhận thưởng' : 'xem nhiệm vụ'}"><span>${task.rewarded ? '✓' : task.kind === 'orders' ? '▤' : '★'} ${missionLabels[task.kind].short}</span><b>${task.progress}/${task.target}</b></button>`).join('')}</div>` : ''}
   </div>`
+}
+
+function missionDetails(tasks: DailyMission[]): string {
+  return `<div class="mission-details">${tasks.map(task => `<article class="mission-detail${task.rewarded ? ' complete' : ''}"><h3>${task.rewarded ? '✓' : task.kind === 'orders' ? '▤' : '★'} ${missionLabels[task.kind].short}<b>${task.progress}/${task.target}</b></h3><p>${missionLabels[task.kind].detail}</p><progress max="${task.target}" value="${task.progress}" aria-label="${missionLabels[task.kind].short}"></progress><span>${task.rewarded ? 'Đã nhận' : 'Thưởng'} ${money(task.cash)} · ${task.xp} EXP</span></article>`).join('')}</div>`
 }
 
 function marketScreen(state: GameState): string {
@@ -180,12 +198,13 @@ function customerFigure(state: GameState, customer: Customer, options: ScreenOpt
   const person = profiles[customer.profile]
   const quantity = customer.order.quantity
   const served = customer.servedPortions.length
-  const line = quantity > 1 ? `Cho ${quantity} bịch nha!` : person.line
+  const chapter = customer.storyStage === undefined ? undefined : regularStories[customer.profile]?.chapters[customer.storyStage]
+  const line = customer.special ? 'Mình ghé thử thách tiệm một chút nha!' : chapter?.greeting ?? (quantity > 1 ? `Cho ${quantity} bịch nha!` : person.line)
   return `<button type="button" class="customer-figure${arriving ? ' arriving' : ''}${customer.id % 2 ? '' : ' from-right'}" data-action="customer" data-id="${customer.id}"
      aria-label="${person.name}" aria-pressed="${active}" title="${person.role}"${speaking ? ' aria-describedby="customer-speech"' : ''}>
     ${speaking ? `<span class="customer-speech" id="customer-speech">${escape(line)}</span>` : ''}
     <span class="customer-sprite">${guestSprite(customer.profile)}${quantity > 1 ? `<span class="customer-order-count" aria-label="Đã giao ${served} trên ${quantity} bịch">${served ? `${served}/${quantity}` : `×${quantity}`}</span>` : ''}</span>
-    <b>${person.name}</b>
+    <b>${customer.special ? '★ ' : chapter ? '♡ ' : ''}${person.name}</b>
     <span class="patience" role="progressbar" aria-label="Kiên nhẫn của ${person.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" data-patience="${customer.id}">
       <i class="${patienceColor(percent)}" style="width:${percent}%"></i>
     </span>
@@ -197,8 +216,8 @@ function queueScene(state: GameState, options: ScreenOptions): string {
   return `<section class="queue-scene" aria-label="Hàng khách đợi">
     ${counterScene(state.level)}
     <div class="customers">${queue.length ? queue.map(customer => customerFigure(state, customer, options)).join('')
-      : `<p class="queue-empty">${enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
-    ${options.departure ? `<div class="departure" aria-hidden="true"><span>${escape(options.departure.text)}</span><div>${guestSprite(options.departure.profile)}</div></div>` : ''}
+      : `<p class="queue-empty">${currentShiftPhase(state).intervalFactor === 0 ? 'Đã ngừng đón khách mới.' : enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
+    ${options.departure ? `<div class="departure" style="--departure-duration:${options.departure.durationMs}ms" aria-hidden="true"><span>${escape(options.departure.text)}</span><div>${guestSprite(options.departure.profile)}</div></div>` : ''}
   </section>`
 }
 
@@ -249,6 +268,7 @@ function orderSlip(customer: Customer, bowl?: Bowl): string {
     <div class="order-notes"><b>Ghi chú</b><span${heatMismatch ? ' class="note-mismatch"' : ''}>${heatLabels[order.heat]}</span>
       ${order.noCilantro ? `<span${bowl?.ingredients.cilantro ? ' class="note-mismatch"' : ''}>Bỏ rau răm</span>` : ''}
     </div>
+    ${customer.special ? `<div class="special-request"><b>★ ${specialChallenges[customer.special].label}</b><span>${specialChallenges[customer.special].detail}</span><small>+${money(specialChallenges[customer.special].cash)} · ${specialChallenges[customer.special].xp} EXP</small></div>` : ''}
   </div>`
 }
 
@@ -263,6 +283,7 @@ function receiptSummary(guest: Customer, active: boolean, bowl?: Bowl): string {
       aria-current="${active}" aria-controls="order-details">
       <span class="receipt-meta"><b>#${String(guest.id).padStart(3, '0')}</b><span>${profiles[guest.profile].name}</span></span>
       <b class="receipt-dish">${dish}</b>
+      ${guest.special ? `<span class="receipt-challenge">★ ${specialChallenges[guest.special].label}</span>` : ''}
       ${order.quantity > 1 ? `<span class="receipt-portions">Đã giao ${guest.servedPortions.length}/${order.quantity} bịch</span>` : ''}
       <span class="receipt-notes">${notes.join(' · ')}</span>
       <span class="receipt-summary-footer"><b>${money(order.price * order.quantity)}</b><span aria-label="${checked} trên ${ids.length} nguyên liệu">${checked}/${ids.length}</span></span>
@@ -397,6 +418,7 @@ function shopScreen(state: GameState, options: ScreenOptions): string {
     ${statusStrip(state, true)}
     <section class="shop-front" aria-label="Quầy đón khách">
       <div class="queue-heading"><h1>Quầy bán hàng</h1><div class="heading-buttons">
+        ${shiftNotice(state)?.id === 'special' ? `<span class="special-arrival-alert" role="status" aria-label="Khách mời sắp ghé" title="Khách mời sắp ghé">${icon('star', 18)}</span>` : ''}
         <button type="button" class="button quiet close-shift" data-action="close-shop">Kết thúc sớm</button>
         ${labelButton('help', 'Hướng dẫn nhanh', 'help')}
       </div></div>
@@ -432,22 +454,24 @@ function reportBody(state: GameState, options: ScreenOptions): string {
       <button type="button" data-action="period-week" aria-pressed="${options.reportPeriod === 'week'}">Tuần</button>
     </div>${html}
     <div class="report-metrics">
-      <div><strong>${report.sold}</strong><span>Phần đã bán</span></div>
+      <div><strong>${report.sold}</strong><span>Phần đã bán · ${report.completedOrders} đơn đủ</span></div>
       <div><strong>${report.lost}</strong><span>Khách bỏ về</span></div>
       <div><strong>${starsLabel(report.stars, report.reviewCount)} <small>★</small></strong><span>Sao trung bình</span></div>
     </div>
     <section class="receipt">
-      <h3>Doanh thu <strong>${money(report.revenue)}</strong></h3>
+      <h3>Tổng thu nhập <strong>${money(report.revenue)}</strong></h3>
       ${sold.length ? sold.map(id => `<div><span>${menu[id].name} × ${report.sales[id]!.count}</span><b>${money(report.sales[id]!.revenue)}</b></div>`).join('') : '<p>Chưa bán được phần nào.</p>'}
+      <div><span>Tip & thưởng</span><b>${money(report.tips)}</b></div>
       <h3>Chi phí</h3>
       <div><span>Nguyên liệu món đã bán</span><b>${money(-report.used)}</b></div>
       <div><span>Phần đã đổ bỏ</span><b>${money(-report.waste)}</b></div>
       <div><span>Nguyên liệu tươi hư</span><b>${money(-report.spoilage)}</b></div>
       <div><span>Mặt bằng và điện nước</span><b>${money(-report.overhead)}</b></div>
       ${report.wages ? `<div><span>Lương phụ bếp</span><b>${money(-report.wages)}</b></div>` : ''}
-      <div><span>Thuế (3% doanh thu)</span><b>${money(-report.tax)}</b></div>
+      <div><span>Thuế (3% tổng thu nhập)</span><b>${money(-report.tax)}</b></div>
       <div class="receipt-total"><strong>Lợi nhuận sau thuế</strong><strong class="${report.profit < 0 ? 'negative' : ''}">${signMoney(report.profit)}</strong></div>
     </section>
+    <section class="mission-report"><h3>+${report.xpEarned} EXP trong kỳ</h3>${options.reportPeriod === 'week' ? `<p>${report.missions.filter(task => task.rewarded).length}/${report.missions.length} nhiệm vụ hoàn thành</p>` : missionDetails(report.missions)}</section>
     <section class="cash-report">
       <h3>${icon('coin', 18)} Két của tiệm</h3>
       <div><span>Đã trả tiền nhập hàng</span><b>${money(-report.purchases)}</b></div>
@@ -491,14 +515,15 @@ function guide(): string {
     <li><div><strong>Đọc đơn trước khi làm</strong><p>Chọn một khách rồi xem phiếu trên thanh gỗ bên phải. So hình nguyên liệu trên phiếu với các khay. Chạm hoặc kéo nguyên liệu lên thau.</p></div></li>
     <li><div><strong>Nêm rồi trộn đến 100%</strong><p>Cho bánh tráng vào trước, thêm tắc rồi các gia vị theo đơn. Bấm Trộn đều tay và đợi thanh chạy hết.</p></div></li>
     <li><div><strong>Thêm topping, trộn nhẹ và giao</strong><p>Thêm rau, topping rồi mới rắc đậu phộng hoặc hành phi. Trộn nhẹ, chọn bao bì kèm đũa và bấm Giao món.</p></div></li>
-    <li><div><strong>Xem sổ cuối ngày</strong><p>Ca bán dài 4 phút, đến 21:00. Bạn có thể chọn Kết thúc sớm ở quầy. Xem tiền lời, trả lời khách và tích danh tiếng để mở món mới.</p></div></li>
+    <li><div><strong>Xem sổ cuối ngày</strong><p>Ca bán dài 4 phút, đến 21:00. Có thể Kết thúc sớm ở quầy. Hoàn thành nhiệm vụ, trả lời đánh giá để tích EXP và mở cấp vào ngày kế tiếp.</p></div></li>
   </ol>`
 }
 
 export function dialogContent(state: GameState | null, options: ScreenOptions): string {
   if (!options.modal) return ''
-  const titles = { help: 'Hướng dẫn nhanh', reviews: 'Đánh giá của khách', reset: 'Mở một tiệm mới?', ledger: 'Sổ thu chi', 'close-shop': 'Kết thúc ngày sớm?' }
+  const titles = { help: 'Hướng dẫn nhanh', reviews: 'Đánh giá của khách', reset: 'Mở một tiệm mới?', ledger: 'Sổ thu chi', 'close-shop': 'Kết thúc ngày sớm?', missions: 'Nhiệm vụ hôm nay' }
   const content = options.modal === 'help' ? guide() : options.modal === 'reviews' ? reviewList(state, options)
+    : options.modal === 'missions' && state ? `${missionDetails(state.daily?.missions ?? [])}<p class="mission-help">Nhận đủ mọi bịch của một khách mới tính một đơn. Thưởng tự cộng vào két. EXP mở cấp quán vào ngày kế tiếp.</p>`
     : options.modal === 'ledger' && state ? reportBody(state, options)
     : options.modal === 'close-shop' && state ? `<p class="reset-copy">Tiệm sẽ đóng lúc ${shopTime(state)} và chốt sổ ngay. Chi phí trong ngày vẫn được tính.</p>
     ${state.shift?.queue.length ? `<p class="close-detail">${state.shift.queue.length} khách đang chờ sẽ rời quầy. Phần đang làm sẽ tính vào hao hụt.</p>` : ''}
@@ -535,6 +560,9 @@ export function renderApp(state: GameState | null, options: ScreenOptions): stri
 export function updateClocks(root: HTMLElement, state: GameState): void {
   const clock = root.querySelector('[data-clock]')
   if (clock) clock.textContent = shopTime(state)
+  const countdown = root.querySelector('[data-rush-countdown]')
+  const notice = shiftNotice(state)
+  if (countdown && notice?.id === 'warning' && countdown.textContent !== notice.label) countdown.textContent = notice.label
   const percent = Math.floor(mixProgress(state))
   const fill = root.querySelector<HTMLElement>('[data-mix-fill]')
   if (fill) {

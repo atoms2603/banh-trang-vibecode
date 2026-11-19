@@ -30,7 +30,23 @@ export function hasStock(inventory: Inventory, recipe: Recipe): boolean {
 }
 
 export function emptyTally(): DayTally {
-  return { sales: {}, lost: 0, used: 0, waste: 0, purchases: 0, stars: 0, reviewCount: 0 }
+  return { sales: {}, lost: 0, used: 0, waste: 0, purchases: 0, stars: 0, reviewCount: 0,
+    completedOrders: 0, tips: 0, xpEarned: 0 }
+}
+
+export function addExperience(state: GameState, amount: number): void {
+  state.reputation += amount
+  state.tally.xpEarned += amount
+  if (state.phase === 'report') {
+    const report = state.reports.find(entry => entry.day === state.day)
+    if (report) report.xpEarned += amount
+  }
+}
+
+export function awardBonus(state: GameState, cash: number, xp: number): void {
+  state.cash += cash
+  state.tally.tips += cash
+  addExperience(state, xp)
 }
 
 export function tallySale(tally: DayTally, dish: MenuId, price: number, cost: number): void {
@@ -54,7 +70,7 @@ export function settleDay(state: GameState): DailyReport {
 
   const { tally } = state
   const sold = Object.values(tally.sales).reduce((total, line) => total + line.count, 0)
-  const revenue = salesRevenue(tally)
+  const revenue = salesRevenue(tally) + tally.tips
   const overhead = levels[state.level].overhead
   const wages = state.staff ? staffWage : 0
   const tax = Math.round(revenue * 0.03)
@@ -63,7 +79,7 @@ export function settleDay(state: GameState): DailyReport {
   state.cash -= fees
 
   return {
-    ...tally, sales: { ...tally.sales },
+    ...tally, sales: { ...tally.sales }, missions: state.daily?.missions.map(mission => ({ ...mission })) ?? [],
     day: state.day, level: state.level, sold, revenue, spoilage, overhead, wages, tax,
     profit: netReceipts - tally.used - tally.waste - spoilage,
     cashDelta: netReceipts - tally.purchases,
@@ -75,10 +91,11 @@ export function sumReports(reports: DailyReport[]): DailyReport | undefined {
   const last = reports.at(-1)
   if (!last) return undefined
   const sum = { ...last, sales: {}, lost: 0, used: 0, waste: 0, purchases: 0, stars: 0, reviewCount: 0,
+    completedOrders: 0, tips: 0, xpEarned: 0, missions: reports.flatMap(report => report.missions),
     sold: 0, revenue: 0, spoilage: 0, overhead: 0, wages: 0, tax: 0, profit: 0, cashDelta: 0 } satisfies DailyReport
   const totals: DailyReport = sum
   const keys = ['lost', 'used', 'waste', 'purchases', 'stars', 'reviewCount', 'sold', 'revenue',
-    'spoilage', 'overhead', 'wages', 'tax', 'profit', 'cashDelta'] as const
+    'spoilage', 'overhead', 'wages', 'tax', 'profit', 'cashDelta', 'completedOrders', 'tips', 'xpEarned'] as const
   for (const report of reports) {
     for (const key of keys) totals[key] += report[key]
     for (const [dish, line] of Object.entries(report.sales) as [MenuId, { count: number; revenue: number }][]) {

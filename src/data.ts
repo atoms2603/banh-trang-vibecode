@@ -1,4 +1,4 @@
-import type { Ingredient, IngredientId, Level, MarketPack, MenuId, MenuItem, ReplyId } from './types.ts'
+import type { Ingredient, IngredientId, Level, MarketPack, MenuId, MenuItem, MissionKind, ReplyId, Reward, SpecialKind, StoryChapter } from './types.ts'
 
 export const ingredients: Record<IngredientId, Ingredient> = {
   rice:       { name: 'Bánh tráng cắt sợi', short: 'Bánh tráng', level: 1, category: 'base', cost: 2000 },
@@ -63,6 +63,69 @@ export const levels: Record<Level, { name: string; threshold: number; overhead: 
 
 export const heatLabels = ['Không cay', 'Ít cay', 'Cay vừa', 'Siêu cay'] as const
 export const staffWage = 20000
+
+export const shiftRhythm = [
+  { id: 'warmup', untilMs: 40000, label: 'Khởi động', intervalFactor: 1.3 },
+  { id: 'normal', untilMs: 90000, label: 'Khách ghé đều', intervalFactor: 1 },
+  { id: 'rush', untilMs: 110000, label: 'Giờ tan học!', intervalFactor: .6 },
+  { id: 'rest', untilMs: 160000, label: 'Thưa khách', intervalFactor: 1.6 },
+  { id: 'last', untilMs: 180000, label: 'Lượt khách cuối', intervalFactor: 1 },
+  { id: 'closing', untilMs: 240000, label: 'Giao nốt hàng chờ', intervalFactor: 0 },
+] as const
+
+export const engagementRules = {
+  shiftDurationMs: 240000,
+  firstArrivalMs: 900,
+  patienceMs: 70000,
+  extraPortionPatienceMs: 18000,
+  regularStartDay: 2,
+  specialStartDay: 3,
+  rushWarningMs: 15000,
+  specialWarningMs: 10000,
+  specialChance: .35,
+  specialStartMs: 160000,
+  specialEndMs: 180000,
+  specialProfile: 4,
+  firstDayOrderTarget: 5,
+  firstDayPerfectTarget: 2,
+  orderTargets: [10, 10, 12, 14],
+  qualityRotation: ['perfect', 'quick', 'good'] as readonly MissionKind[],
+  qualityTargets: { perfect: 3, quick: 4, good: 5 },
+  orderReward: { cash: 5000, xp: 5 },
+  qualityReward: { cash: 3000, xp: 3 },
+  storyReward: { cash: 1500, xp: 2 },
+  storyFinalReward: { cash: 3000, xp: 3 },
+} as const
+
+export const missionLabels: Record<MissionKind, { short: string; detail: string }> = {
+  orders: { short: 'Đơn trọn vẹn', detail: 'Giao đủ số bịch cho mỗi khách. Một khách tính một đơn.' },
+  perfect: { short: 'Đơn 5 sao', detail: 'Giao đủ đơn và nhận đánh giá 5 sao.' },
+  quick: { short: 'Nhanh & đúng', detail: 'Đạt ít nhất 3 sao và còn tối thiểu 50% kiên nhẫn khi giao đủ đơn.' },
+  good: { short: 'Khách hài lòng', detail: 'Giao đủ đơn và nhận đánh giá từ 4 sao.' },
+}
+
+export const specialChallenges: Record<SpecialKind, Reward & { label: string; detail: string }> = {
+  perfect: { label: 'Phần bánh hoàn hảo', detail: 'Làm một bịch đạt 5 sao.', cash: 5000, xp: 5 },
+  crispy: { label: 'Topping giòn', detail: 'Đủ topping giòn, thêm sau trộn đầu, trộn nhẹ và đạt từ 4 sao.', cash: 4000, xp: 4 },
+}
+
+export const regularStories: Record<number, { title: string; chapters: readonly StoryChapter[] }> = {
+  0: { title: 'Chuyện của Bé Mây', chapters: [
+    { quantity: 1, greeting: 'Con sắp kiểm tra rồi, ăn một bịch lấy tinh thần!', goodReply: 'Ngon quá, con có động lực làm bài rồi!', poorReply: 'Hơi lệch gu con, mai cô trộn ngon hơn nha!' },
+    { quantity: 1, greeting: 'Con làm bài ổn lắm! Ghé tiệm ăn mừng nè.', goodReply: 'Điểm cao, bánh ngon, hôm nay quá đỉnh!', poorReply: 'Bài làm ổn hơn bịch bánh rồi cô ơi!' },
+    { quantity: 2, greeting: 'Con rủ bạn tới ăn mừng, cho tụi con hai bịch!', goodReply: 'Bạn con cũng mê! Tụi con thành khách ruột nha!', poorReply: 'Tụi con góp ý thật lòng, lần sau ghé tiếp nha!' },
+  ] },
+  3: { title: 'Đồng đội của Anh Tín', chapters: [
+    { quantity: 1, greeting: 'Chạy đơn ngang thấy thơm quá, cho anh ăn thử!', goodReply: 'Đúng gu anh rồi! Lưu địa chỉ tiệm liền.', poorReply: 'Chưa đúng gu lắm, bữa sau anh thử lại.' },
+    { quantity: 2, greeting: 'Đồng nghiệp nhờ mua ké, hôm nay anh lấy hai bịch!', goodReply: 'Anh em khen quá trời, quán sắp đông đó!', poorReply: 'Anh em góp ý chút, bữa sau mình cải thiện nha!' },
+    { quantity: 3, greeting: 'Cả đội nhờ anh đặt chung ba bịch, nhờ tiệm nha!', goodReply: 'Cả đội duyệt! Giờ nghỉ là tụi anh ghé.', poorReply: 'Anh nhận đủ rồi, lần tới mong tiệm lên tay!' },
+  ] },
+  6: { title: 'Tiếng lành trong xóm', chapters: [
+    { quantity: 1, greeting: 'Tiệm mới hả con? Cho cô một bịch ăn thử.', goodReply: 'Được đó con, cô sẽ ghé thường xuyên!', poorReply: 'Chưa vừa miệng cô, con cứ từ từ lên tay.' },
+    { quantity: 1, greeting: 'Cô quay lại nè, hôm nay để cô góp ý khẩu vị.', goodReply: 'Vị này vừa miệng! Cô giới thiệu hàng xóm nhé.', poorReply: 'Vị hơi lệch rồi, nhớ lời cô góp ý nha!' },
+    { quantity: 2, greeting: 'Cô dẫn hàng xóm tới ủng hộ, cho cô hai bịch!', goodReply: 'Cả xóm có tiệm ruột mới rồi đó con!', poorReply: 'Cô vẫn ủng hộ, mai mình trộn kỹ hơn nha!' },
+  ] },
+}
 
 export const profiles = [
   { name: 'Bé Mây', role: 'Học sinh', line: 'Cô ơi, cho con một phần nha!', tint: '#e695aa', skin: '#f5c7a4', hair: '#583b36', style: 'school' },

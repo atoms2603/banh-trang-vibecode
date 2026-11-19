@@ -277,13 +277,13 @@ function beginGame(): void {
   renderScreen(true)
 }
 
-function announceDeparture(profile: number, text: string): void {
+function announceDeparture(profile: number, text: string, durationMs = 1700): void {
   window.clearTimeout(departureTimer)
-  options.departure = { profile, text }
+  options.departure = { profile, text, durationMs }
   departureTimer = window.setTimeout(() => {
     options.departure = null
     screen.querySelector('.departure')?.remove()
-  }, 1700)
+  }, durationMs)
 }
 
 const coinSpread = [
@@ -376,7 +376,7 @@ function handle(button: HTMLButtonElement): void {
   }
   if (action === 'reset-confirm') return beginGame()
   if (action === 'modal-close') return showModal(null)
-  if (action === 'help' || action === 'reviews' || action === 'ledger') return showModal(action)
+  if (action === 'help' || action === 'reviews' || action === 'ledger' || action === 'missions') return showModal(action)
   if (action === 'mute') {
     if (state) {
       state.muted = !state.muted
@@ -426,6 +426,7 @@ function handle(button: HTMLButtonElement): void {
     const result = replyToReview(state, Number(id), value as ReplyId)
     options.replyFor = null
     persist()
+    renderScreen()
     flash(result.message, result.ok)
     renderModal()
     return
@@ -445,7 +446,10 @@ function handle(button: HTMLButtonElement): void {
   const dish = menuIds.find(key => key === id)
 
   const guest = currentCustomer(state)
-  let result: { ok: boolean; message: string } | undefined
+  const cashBefore = state.cash
+  const xpBefore = state.reputation
+  const rewardedBefore = state.daily?.missions.filter(task => task.rewarded).length ?? 0
+  let result: { ok: boolean; message: string; departureText?: string } | undefined
   let move = false
   let payment: { amount: number; origin?: DOMRect } | undefined
   switch (action) {
@@ -487,9 +491,9 @@ function handle(button: HTMLButtonElement): void {
     case 'deliver':
       result = deliver(state)
       if (result.ok && guest) {
-        payment = { amount: guest.order.price, origin: paymentSource(guest.id) }
+        payment = { amount: state.cash - cashBefore, origin: paymentSource(guest.id) }
         sound('serve', muted())
-        if (guest.servedPortions.length === guest.order.quantity) announceDeparture(guest.profile, 'Đã nhận đủ món!')
+        if (guest.servedPortions.length === guest.order.quantity) announceDeparture(guest.profile, result.departureText ?? 'Đã nhận đủ món!', result.departureText ? 3500 : 1700)
         options.heatOpen = false
       }
       break
@@ -510,6 +514,8 @@ function handle(button: HTMLButtonElement): void {
   }
   let message = result.message
   if (payment) message += ' · +' + money(payment.amount)
+  if (state.reputation > xpBefore) message += ' · +' + (state.reputation - xpBefore) + ' EXP'
+  if ((state.daily?.missions.filter(task => task.rewarded).length ?? 0) > rewardedBefore) message += ' · Xong nhiệm vụ!'
   if (completedLesson) message += ' · Xong hướng dẫn!'
   flash(message, result.ok)
   renderScreen(move)
