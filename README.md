@@ -39,6 +39,10 @@ pnpm preview
 
 `dist/` chứa bản tĩnh để phục vụ qua HTTP. Font Nunito và Quicksand dùng giấy phép OFL trong `public/licenses/`.
 
+Nhạc nền dùng `sound/bgm/Cozy Game Groove.mp3`, phát lặp từ lúc mở trang và dùng chung nút bật/tắt âm thanh với hiệu ứng. Nếu trình duyệt chặn tự phát, nhạc bắt đầu khi người chơi chạm hoặc nhấn phím lần đầu. Chuyển sang tab khác sẽ tạm dừng nhạc; trở lại tiếp tục từ vị trí cũ, theo lựa chọn bật/tắt đã lưu.
+
+Khi trộn đều tay, hai bản `sound/sfx/paper-rice-mixed-1.mp3` và `paper-rice-mixed-2.mp3` phát luân phiên, không chồng tiếng. SFX dừng ngay khi trộn đạt 100%, tạm dừng trộn, tắt tiếng, mở bảng tạm dừng hoặc rời màn bán hàng.
+
 ## Ca đầu tiên
 
 Nhập bánh tráng, muối tôm, tắc và bộ đóng gói. Sang **Menu hôm nay** để chỉnh giá hoặc đổi món. Khi mở cửa, chọn khách rồi bấm hoặc kéo nguyên liệu vào thau. Với món muối tắc, thêm bánh tráng, tắc và muối tôm. Bấm **Trộn đều tay** đến 100%, bấm **Trộn nhẹ**, chọn bịch và **Giao món**. Mỗi ca mới kéo dài tối đa **1 phút 45 giây** (105 giây).

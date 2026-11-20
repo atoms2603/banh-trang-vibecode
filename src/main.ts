@@ -2,7 +2,7 @@ import '@fontsource-variable/quicksand'
 import '@fontsource-variable/nunito'
 import './styles.css'
 
-import { sound } from './audio.ts'
+import { backgroundMusic, mixingSound, sound } from './audio.ts'
 import { food, icon } from './art.ts'
 import { ingredientIds, ingredients, menuIds, replies } from './data.ts'
 import { money } from './economy.ts'
@@ -61,6 +61,11 @@ let tutorialKey = ''
 
 function muted(): boolean {
   return state?.muted ?? options.initialMute
+}
+
+function syncMixingSound(): void {
+  mixingSound(Boolean(state?.phase === 'shop' && state.shift?.bowl.mixing && mixProgress(state) < 100
+    && !options.home && !options.modal), muted())
 }
 
 function flash(message: string, ok = true): void {
@@ -203,6 +208,7 @@ function resizeLayout(): void {
 }
 
 function renderScreen(move = false): void {
+  syncMixingSound()
   if (drag?.ghost && !move) {
     deferredRender = true
     return
@@ -269,6 +275,7 @@ function showModal(name: Modal): void {
     modalTrigger = { ...document.activeElement.dataset }
   }
   options.modal = name
+  syncMixingSound()
   options.replyFor = null
   lastFrame = performance.now()
   if (persist()) renderScreen()
@@ -358,7 +365,7 @@ function handle(button: HTMLButtonElement): void {
   const { action: buttonAction, id, value } = button.dataset
   const action = actionOf(button)
   if (!action || action === 'brand' || (!options.home && !lessonAllows(state, action, id))) return
-  if (action !== 'mute' && action !== 'deliver') sound(action === 'mix' ? 'mix' : 'tap', muted())
+  if (action !== 'mute' && action !== 'deliver' && action !== 'mix') sound('tap', muted())
   if (action === 'new') {
     if (state) showModal('reset')
     else beginGame()
@@ -372,6 +379,7 @@ function handle(button: HTMLButtonElement): void {
       state.muted = !state.muted
       persist()
     } else options.initialMute = !options.initialMute
+    backgroundMusic(muted())
     sound('tap', muted())
     renderScreen()
     return
@@ -588,9 +596,19 @@ window.addEventListener('scroll', updateLayout, { passive: true })
 screen.addEventListener('scroll', positionTutorial, { capture: true, passive: true })
 window.addEventListener('resize', resizeLayout)
 window.visualViewport?.addEventListener('resize', resizeLayout)
-window.addEventListener('pagehide', () => persist())
+// Retry blocked autoplay inside a gesture, including keyboard-only play.
+document.addEventListener('pointerdown', () => backgroundMusic(muted()), { capture: true, passive: true })
+document.addEventListener('keydown', () => backgroundMusic(muted()), { capture: true })
+window.addEventListener('pagehide', () => {
+  persist()
+  backgroundMusic(muted(), true)
+  mixingSound(false, muted(), true)
+})
+window.addEventListener('pageshow', () => backgroundMusic(muted()))
 document.addEventListener('visibilitychange', () => {
   persist()
+  backgroundMusic(muted())
+  syncMixingSound()
   lastFrame = performance.now()
 })
 
@@ -603,6 +621,7 @@ function loop(now: number): void {
   const guest = currentCustomer(state)
   const reviewCount = state.reviews.length
   const changed = tick(state, Math.max(0, delta))
+  syncMixingSound()
   if (changed) {
     if (!state.shift) return showReport(state)
     if (guest?.id !== currentCustomer(state)?.id || (progress < 100 && mixProgress(state) >= 100)) options.heatOpen = false
@@ -620,4 +639,5 @@ function loop(now: number): void {
 }
 
 renderScreen()
+backgroundMusic(muted())
 requestAnimationFrame(loop)
