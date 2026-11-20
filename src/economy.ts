@@ -1,5 +1,5 @@
 import { ingredientIds, ingredients, levels, menu, staffWage } from './data.ts'
-import type { DailyReport, DayTally, GameState, Inventory, MenuId, Recipe } from './types.ts'
+import type { CloseReason, DailyReport, DayTally, GameState, Inventory, MenuId, Recipe } from './types.ts'
 
 const vnd = new Intl.NumberFormat('vi-VN')
 
@@ -59,7 +59,7 @@ export function salesRevenue(tally: DayTally): number {
   return Object.values(tally.sales).reduce((total, line) => total + line.revenue, 0)
 }
 
-export function settleDay(state: GameState): DailyReport {
+export function settleDay(state: GameState, endReason: CloseReason = 'manual'): DailyReport {
   let spoilage = 0
   for (const id of ingredientIds) {
     if (!ingredients[id].fresh) continue
@@ -80,7 +80,7 @@ export function settleDay(state: GameState): DailyReport {
 
   return {
     ...tally, sales: { ...tally.sales }, missions: state.daily?.missions.map(mission => ({ ...mission })) ?? [],
-    day: state.day, level: state.level, sold, revenue, spoilage, overhead, wages, tax,
+    day: state.day, level: state.level, endReason, sold, revenue, spoilage, overhead, wages, tax,
     profit: netReceipts - tally.used - tally.waste - spoilage,
     cashDelta: netReceipts - tally.purchases,
     cash: state.cash,

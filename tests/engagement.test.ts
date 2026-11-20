@@ -1,17 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ingredientIds, ingredients, levels, menuIds, profiles, regularStories } from '../src/data.ts'
-import { createDailyActivity, currentShiftPhase, shiftNotice } from '../src/engagement.ts'
+import { createDailyActivity as createActivity, currentShiftPhase, shiftNotice } from '../src/engagement.ts'
 import { priceOf, salesRevenue, sumReports } from '../src/economy.ts'
 import { addHeat, addIngredient, closeShop, currentCustomer, deliver, finishMix, mixDuration, newGame,
-  nextDay, openShop, packBowl, PATIENCE_MS, purchase, replyToReview, selectCustomer, SHIFT_MS, tick, toggleMix } from '../src/game.ts'
+  nextDay, openShop, packBowl, PATIENCE_MS, purchase, replyToReview, selectCustomer, tick, toggleMix } from '../src/game.ts'
 import { parseSave } from '../src/storage.ts'
 import { dialogContent, renderApp } from '../src/ui.ts'
 import type { GameState, IngredientId, Level, MenuId } from '../src/types.ts'
 
+// Retain coverage of the 240-second policy used by migrated, in-progress days.
+const SHIFT_MS = 240000
+const createDailyActivity = (day: number, level: number) => createActivity(day, level, 'legacy-240')
+
 function stocked(day = 2, level: Level = 1, dish: MenuId = 'salt'): GameState {
   const state = newGame()
   state.day = day
+  state.dayRules = 'legacy-240'
   state.level = level
   state.reputation = levels[level].threshold
   state.daily = createDailyActivity(day, level)
@@ -21,12 +26,14 @@ function stocked(day = 2, level: Level = 1, dish: MenuId = 'salt'): GameState {
 }
 
 function start(state: GameState, random = () => .99): void {
+  if (state.dayRules !== 'legacy-240' && state.daily) state.daily = createDailyActivity(state.day, state.level)
+  state.dayRules = 'legacy-240'
   assert.equal(openShop(state, random).ok, true)
 }
 
 function arrive(state: GameState, profile = 1) {
   const available = profiles.map((_, index) => index).filter(index => !state.shift!.queue.some(guest => guest.profile === index)
-    && !(state.daily?.special && index === 4))
+    && !(state.daily?.highlight && index === 4))
   const values = [0, (available.indexOf(profile) + .1) / available.length]
   state.shift!.nextArrivalMs = state.shift!.elapsedMs
   tick(state, 1, () => values.shift() ?? .5)
@@ -249,17 +256,17 @@ test('day missions lock targets and rewards, rotate quality, and check quick-ser
 test('special chance and menu eligibility are decided on opening and survive save/reload', () => {
   const early = stocked(2)
   start(early, () => 0)
-  assert.equal(early.daily!.special, null)
+  assert.equal(early.daily!.highlight, null)
   const noSpecial = stocked(3)
   start(noSpecial, () => .35)
-  assert.equal(noSpecial.daily!.special, null)
+  assert.equal(noSpecial.daily!.highlight, null)
   const expensive = stocked(3)
   expensive.menu.salt.price = 20000
   start(expensive, () => 0)
-  assert.equal(expensive.daily!.special, null)
+  assert.equal(expensive.daily!.highlight, null)
   let state = stocked(3)
   start(state, () => 0)
-  assert.deepEqual(state.daily!.special, { atMs: 160000, kind: 'perfect', status: 'pending' })
+  assert.deepEqual(state.daily!.highlight, { atMs: 160000, kind: 'special', profile: 4, specialKind: 'perfect', status: 'pending' })
   const values = [0, .6]
   tick(state, 900, () => values.shift() ?? .5)
   assert.notEqual(currentCustomer(state)!.profile, 4)
@@ -269,13 +276,13 @@ test('special chance and menu eligibility are decided on opening and survive sav
   tick(state, 1)
   assert.equal(shiftNotice(state)?.id, 'special')
   state = parseSave(JSON.stringify(state))!
-  assert.equal(state.daily!.special!.atMs, 160000)
+  assert.equal(state.daily!.highlight!.atMs, 160000)
   tick(state, 10000, () => .5)
   const special = state.shift!.queue.find(guest => guest.special)!
   assert.equal(special.profile, 4)
   assert.equal(special.order.quantity, 1)
   assert.equal(special.patienceMs, PATIENCE_MS)
-  assert.equal(state.daily!.special!.status, 'arrived')
+  assert.equal(state.daily!.highlight!.status, 'arrived')
   assert.equal(selectCustomer(state, special.id).ok, true)
   const before = state.cash
   const xp = state.reputation
@@ -301,10 +308,10 @@ test('special waits for capacity until 180s, then drops the event without chargi
       else state.menu.salt.price = 20000
     }
     tick(state, 1)
-    assert.equal(state.daily!.special!.status, 'pending')
+    assert.equal(state.daily!.highlight!.status, 'pending')
     state = parseSave(JSON.stringify(state))!
     tick(state, 20000)
-    assert.equal(state.daily!.special!.status, 'skipped')
+    assert.equal(state.daily!.highlight!.status, 'skipped')
     assert.equal(state.tally.tips, 0)
   }
   const state = stocked(3)
@@ -312,11 +319,11 @@ test('special waits for capacity until 180s, then drops the event without chargi
   state.shift!.elapsedMs = 170000
   state.shift!.nextArrivalMs = 1e9
   tick(state, 1)
-  assert.equal(state.daily!.special!.status, 'arrived')
+  assert.equal(state.daily!.highlight!.status, 'arrived')
   const early = stocked(3)
   start(early, () => 0)
   closeShop(early)
-  assert.equal(early.daily!.special!.status, 'skipped')
+  assert.equal(early.daily!.highlight!.status, 'skipped')
 })
 
 test('a scheduled special takes a newly freed queue slot without replaying missed ordinary arrivals', () => {
@@ -326,10 +333,10 @@ test('a scheduled special takes a newly freed queue slot without replaying misse
   state.shift!.elapsedMs = 160000
   for (const guest of state.shift!.queue) guest.arrivalMs = 159000
   tick(state, 1)
-  assert.equal(state.daily!.special!.status, 'pending')
+  assert.equal(state.daily!.highlight!.status, 'pending')
   cook(state)
   tick(state, 1)
-  assert.equal(state.daily!.special!.status, 'arrived')
+  assert.equal(state.daily!.highlight!.status, 'arrived')
   assert.equal(state.shift!.queue.length, 3)
   assert.equal(state.shift!.queue.filter(guest => guest.special).length, 1)
 })
@@ -338,7 +345,7 @@ test('crispy special requires correct late crunch and light mixing; failure rema
   for (const scenario of ['perfect', 'early', 'missing', 'no-light', 'four-stars'] as const) {
     const state = stocked(3, 2, 'eggs')
     start(state, () => 0)
-    assert.equal(state.daily!.special!.kind, 'crispy')
+    assert.equal(state.daily!.highlight!.specialKind, 'crispy')
     state.shift!.elapsedMs = 159999
     state.shift!.nextArrivalMs = 1e9
     tick(state, 1, () => .5)
@@ -443,7 +450,7 @@ test('version 5 migration keeps partial sales and disables new features until th
   delete legacy.tally.tips
   delete legacy.tally.xpEarned
   const migrated = parseSave(JSON.stringify(legacy))!
-  assert.equal(migrated.version, 6)
+  assert.equal(migrated.version, 7)
   assert.equal(migrated.daily, null)
   assert.equal(currentCustomer(migrated)!.servedPortions.length, 1)
   assert.equal(currentCustomer(migrated)!.order.quantity, 3)
@@ -464,7 +471,7 @@ test('save validation rejects broken rewards, story progress and special schedul
   for (const corrupt of [
     (s: GameState) => { s.daily!.missions[0].rewarded = true },
     (s: GameState) => { s.daily!.missions[0].progress = 999 },
-    (s: GameState) => { s.daily!.special!.atMs = 180001 },
+    (s: GameState) => { s.daily!.highlight!.atMs = 180001 },
     (s: GameState) => { s.stories[0].stage = 4 },
     (s: GameState) => { s.tally.tips = -1 },
   ]) {

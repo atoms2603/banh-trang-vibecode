@@ -1,13 +1,13 @@
-import { engagementRules, heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, regularStories } from './data.ts'
+import { engagementRules, heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, regularStories, shiftPolicies } from './data.ts'
 import { addExperience, defaultPrice, emptyTally, hasStock, money, priceBand, priceOf, settleDay, tallySale } from './economy.ts'
-import { completeVisit, createDailyActivity, createStories, currentShiftPhase, shiftNotice } from './engagement.ts'
+import { completeVisit, createDailyActivity, createStories, currentShiftPhase, getShiftRules, shiftNotice } from './engagement.ts'
 import { reviewLine } from './reviews.ts'
 import { advanceTutorial, currentLesson } from './tutorial.ts'
-import type { Bowl, Customer, DepartureReason, GameState, Heat, IngredientId, Inventory, Level, MenuId, Order, Packaging, Recipe, ReplyId, SpecialKind, Stars } from './types.ts'
+import type { Bowl, CloseReason, Customer, DepartureReason, GameState, Heat, HighlightVisit, IngredientId, Inventory, Level, MenuId, Order, Packaging, Recipe, ReplyId, SpecialKind, Stars } from './types.ts'
 
 export const OPEN_MINUTE = 8 * 60
 export const CLOSE_MINUTE = 21 * 60
-export const SHIFT_MS = engagementRules.shiftDurationMs
+export const SHIFT_MS = shiftPolicies['short-105'].durationMs
 export const PATIENCE_MS = engagementRules.patienceMs
 const EXTRA_PORTION_PATIENCE_MS = engagementRules.extraPortionPatienceMs
 
@@ -31,7 +31,7 @@ function emptyBowl(): Bowl {
 
 export function newGame(guided = false): GameState {
   return {
-    version: 6, ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
+    version: 7, dayRules: 'short-105', ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
     inventory: Object.fromEntries(ingredientIds.map(id => [id, 0])) as Inventory,
     menu: Object.fromEntries(menuIds.map(id => [id, { enabled: !guided && id === 'salt', price: defaultPrice(id) }])) as GameState['menu'],
     reviews: [], reports: [], staff: false, muted: false, nextCustomerId: 1,
@@ -89,17 +89,7 @@ export function openShop(state: GameState, random: () => number = Math.random): 
   if (warning) return problem(warning)
   state.phase = 'shop'
   state.shift = { elapsedMs: 0, nextArrivalMs: engagementRules.firstArrivalMs, queue: [], activeId: null, bowl: emptyBowl() }
-  if (state.daily && state.day >= engagementRules.specialStartDay && random() < engagementRules.specialChance) {
-    const candidates = specialDishes(state)
-    if (candidates.length) {
-      const hasCrunch = candidates.some(id => menu[id].recipe.peanut || menu[id].recipe.shallot)
-      const kind: SpecialKind = hasCrunch && random() < .5 ? 'crispy' : 'perfect'
-      state.daily.special = {
-        kind, atMs: engagementRules.specialStartMs + Math.floor(random() * (engagementRules.specialEndMs - engagementRules.specialStartMs + 1)),
-        status: 'pending',
-      }
-    }
-  }
+  if (state.daily) state.daily.highlight = planHighlight(state, random)
   return success()
 }
 
@@ -342,7 +332,7 @@ export function makeOrder(state: GameState, dish: MenuId, random: () => number):
   return { dish, quantity: 1, price, recipe, heat, noCilantro, extraMango, pricey: priceBand(dish, price) === 'high' }
 }
 
-function makeCustomer(state: GameState, dish: MenuId, profile: number, random: () => number, special?: SpecialKind): Customer {
+function makeCustomer(state: GameState, dish: MenuId, profile: number, random: () => number, visit?: HighlightVisit): Customer {
   const shift = state.shift!
   const customer: Customer = {
     id: state.nextCustomerId++,
@@ -351,9 +341,20 @@ function makeCustomer(state: GameState, dish: MenuId, profile: number, random: (
     patienceMs: PATIENCE_MS,
     order: makeOrder(state, dish, random),
     servedPortions: [],
-    ...(special ? { special } : {}),
+    ...(visit?.specialKind ? { special: visit.specialKind } : {}),
   }
-  if (!special && !currentLesson(state)) {
+  if (visit) {
+    customer.order.quantity = visit.kind === 'story' ? regularStories[profile].chapters[visit.storyStage!].quantity : visit.kind === 'group' ? 2 : 1
+    // An optional extra must also fit every bag in the planned visit.
+    if (customer.order.extraMango && state.inventory.mango < customer.order.quantity * 2) {
+      customer.order.extraMango = false
+      customer.order.recipe.mango = 1
+    }
+    if (visit.kind === 'story') {
+      customer.storyStage = visit.storyStage
+      state.stories[profile].lastVisitDay = state.day
+    }
+  } else if (!currentLesson(state)) {
     const roll = random()
     const desired = roll < 0.8 ? 1 : roll < 0.96 ? 2 : 3
     const available = Math.min(...ingredientIds.filter(id => customer.order.recipe[id])
@@ -361,14 +362,20 @@ function makeCustomer(state: GameState, dish: MenuId, profile: number, random: (
     customer.order.quantity = Math.min(desired, available) as Order['quantity']
     const progress = state.stories[profile]
     const chapter = regularStories[profile]?.chapters[progress?.stage]
-    if (state.daily && state.day >= engagementRules.regularStartDay && chapter && progress.lastVisitDay < state.day && available >= chapter.quantity) {
+    if (state.dayRules === 'legacy-240' && state.daily && state.day >= engagementRules.regularStartDay && chapter && progress.lastVisitDay < state.day && available >= chapter.quantity) {
       customer.storyStage = progress.stage
       customer.order.quantity = chapter.quantity
       progress.lastVisitDay = state.day
     }
-    customer.patienceMs += (customer.order.quantity - 1) * EXTRA_PORTION_PATIENCE_MS
   }
+  customer.patienceMs += (customer.order.quantity - 1) * EXTRA_PORTION_PATIENCE_MS
   return customer
+}
+
+function arrivalDelay(state: GameState, random: () => number, dish: MenuId): number {
+  const baseInterval = [0, 10800, 9500, 8300, 7300][state.level]
+  return (baseInterval + random() * 1500) * (priceBand(dish, state.menu[dish].price) === 'low' ? .72 : 1)
+    * currentShiftPhase(state).intervalFactor
 }
 
 function spawnCustomer(state: GameState, random: () => number): boolean {
@@ -382,12 +389,10 @@ function spawnCustomer(state: GameState, random: () => number): boolean {
   const options = dishes.flatMap(id => priceBand(id, state.menu[id].price) === 'low' ? [id, id] : [id])
   const dish = options[Math.floor(random() * options.length)]
   const freeProfiles = profiles.map((_, index) => index).filter(index => !shift.queue.some(customer => customer.profile === index)
-    && !(state.daily?.special && index === engagementRules.specialProfile))
+    && index !== state.daily?.highlight?.profile)
   const customer = makeCustomer(state, dish, freeProfiles[Math.floor(random() * freeProfiles.length)], random)
 
-  const baseInterval = [0, 10800, 9500, 8300, 7300][state.level]
-  const busy = priceBand(dish, customer.order.price) === 'low'
-  shift.nextArrivalMs = shift.elapsedMs + (baseInterval + random() * 1500) * (busy ? 0.72 : 1) * currentShiftPhase(state).intervalFactor
+  shift.nextArrivalMs = shift.elapsedMs + arrivalDelay(state, random, dish)
   if (customer.order.pricey && random() < 0.45) {
     loseCustomer(state, customer, 'priceRefusal', customer.id % 2 ? 1 : 2)
     return true
@@ -404,20 +409,81 @@ function specialDishes(state: GameState, kind?: SpecialKind): MenuId[] {
     && (kind !== 'crispy' || Boolean(menu[id].recipe.peanut || menu[id].recipe.shallot)))
 }
 
-function spawnSpecial(state: GameState, random: () => number): boolean {
-  const schedule = state.daily?.special
+function visitDishes(state: GameState, quantity: number): MenuId[] {
+  return enabledDishes(state).filter(dish => ingredientIds.every(id => state.inventory[id] >= (menu[dish].recipe[id] ?? 0) * quantity))
+}
+
+function storyHighlight(state: GameState, atMs: number, onlyFree = false): HighlightVisit | null {
+  const profiles = Object.keys(regularStories).map(Number)
+  const start = (state.day - engagementRules.regularStartDay) % profiles.length
+  for (let offset = 0; offset < profiles.length; offset++) {
+    const profile = profiles[(start + offset) % profiles.length]
+    const progress = state.stories[profile]
+    const chapter = regularStories[profile].chapters[progress.stage]
+    if (chapter && progress.lastVisitDay < state.day && visitDishes(state, chapter.quantity).length
+      && (!onlyFree || !state.shift?.queue.some(guest => guest.profile === profile))) {
+      return { kind: 'story', profile, storyStage: progress.stage, atMs, status: 'pending' }
+    }
+  }
+  return null
+}
+
+function fallbackHighlight(state: GameState, atMs: number, onlyFree = false): HighlightVisit | null {
+  const story = storyHighlight(state, atMs, onlyFree)
+  if (story) return story
+  const candidates = [1, 2, 5]
+  const ordered = [...candidates.slice((state.day - 2) % 3), ...candidates.slice(0, (state.day - 2) % 3)]
+  const profile = ordered.find(profile => !onlyFree || !state.shift?.queue.some(guest => guest.profile === profile))
+  return profile === undefined ? null : { kind: 'group', profile, atMs, status: 'pending' }
+}
+
+function planHighlight(state: GameState, random: () => number): HighlightVisit | null {
+  const rules = getShiftRules(state)
+  if (state.day < engagementRules.regularStartDay) return null
+  if (state.day >= engagementRules.specialStartDay && random() < engagementRules.specialChance && specialDishes(state).length) {
+    const hasCrunch = specialDishes(state, 'crispy').length > 0
+    const specialKind: SpecialKind = hasCrunch && random() < .5 ? 'crispy' : 'perfect'
+    const atMs = state.dayRules === 'legacy-240'
+      ? rules.highlightStartMs + Math.floor(random() * (rules.highlightEndMs - rules.highlightStartMs + 1))
+      : rules.highlightStartMs
+    return { kind: 'special', profile: engagementRules.specialProfile, specialKind, atMs, status: 'pending' }
+  }
+  return state.dayRules === 'short-105' ? fallbackHighlight(state, rules.highlightStartMs) : null
+}
+
+function dishesForHighlight(state: GameState, visit: HighlightVisit): MenuId[] {
+  if (visit.kind === 'special') return specialDishes(state, visit.specialKind)
+  const quantity = visit.kind === 'story' ? regularStories[visit.profile].chapters[visit.storyStage!].quantity : 2
+  return visitDishes(state, quantity)
+}
+
+function spawnHighlight(state: GameState, random: () => number): boolean {
+  let schedule = state.daily?.highlight
   const shift = state.shift
   if (!shift || schedule?.status !== 'pending') return false
-  if (shift.elapsedMs > engagementRules.specialEndMs) {
+  const deadline = getShiftRules(state).highlightEndMs
+  if (state.dayRules === 'short-105' ? shift.elapsedMs >= deadline : shift.elapsedMs > deadline) {
     schedule.status = 'skipped'
     return true
   }
   if (shift.elapsedMs < schedule.atMs || shift.queue.length >= (state.level === 1 ? 3 : 4)
-    || shift.queue.some(customer => customer.profile === engagementRules.specialProfile)) return false
-  const dishes = specialDishes(state, schedule.kind)
+    || shift.queue.some(customer => customer.profile === schedule!.profile)) return false
+  let dishes = dishesForHighlight(state, schedule)
+  if (!dishes.length && state.dayRules === 'short-105') {
+    const fallback = fallbackHighlight(state, schedule.atMs, true)
+    if (fallback) {
+      state.daily!.highlight = schedule = fallback
+      dishes = dishesForHighlight(state, schedule)
+    }
+  }
   if (!dishes.length) return false
   const dish = dishes[Math.floor(random() * dishes.length)]
-  const customer = makeCustomer(state, dish, engagementRules.specialProfile, random, schedule.kind)
+  const customer = makeCustomer(state, dish, schedule.profile, random, schedule)
+  if (customer.order.pricey && random() < .45) {
+    schedule.status = 'arrived'
+    loseCustomer(state, customer, 'priceRefusal', customer.id % 2 ? 1 : 2)
+    return true
+  }
   shift.queue.push(customer)
   shift.activeId ??= customer.id
   schedule.status = 'arrived'
@@ -426,13 +492,13 @@ function spawnSpecial(state: GameState, random: () => number): boolean {
   return true
 }
 
-export function closeShop(state: GameState): boolean {
+export function closeShop(state: GameState, reason: CloseReason = 'manual'): boolean {
   if (state.phase !== 'shop' || !state.shift || state.reports.some(report => report.day === state.day)) return false
-  if (state.daily?.special?.status === 'pending') state.daily.special.status = 'skipped'
+  if (state.daily?.highlight?.status === 'pending') state.daily.highlight.status = 'skipped'
   for (const customer of [...state.shift.queue]) loseCustomer(state, customer, 'closed')
   trashBowl(state)
   const closedAt = shopMinute(state)
-  state.reports.push({ ...settleDay(state), closedAt })
+  state.reports.push({ ...settleDay(state, reason), closedAt })
   delete state.tutorialStep
   state.shift = null
   state.phase = 'report'
@@ -443,10 +509,11 @@ export function tick(state: GameState, elapsed: number, random: () => number = M
   const shift = state.shift
   if (!shift || state.phase !== 'shop' || elapsed <= 0) return false
   const guided = Boolean(currentLesson(state))
+  const rules = getShiftRules(state)
   const previousNotice = shiftNotice(state)
-  const previousPhase = currentShiftPhase(state).id
+  const previousPhase = currentShiftPhase(state)
   // Let the first guest arrive, then give the player time to learn the controls.
-  const limit = guided ? shift.queue.length ? shift.elapsedMs : shift.nextArrivalMs : SHIFT_MS
+  const limit = guided ? shift.queue.length ? shift.elapsedMs : shift.nextArrivalMs : rules.durationMs
   const delta = Math.min(elapsed, Math.max(0, limit - shift.elapsedMs))
   shift.elapsedMs += delta
   let changed = false
@@ -459,17 +526,27 @@ export function tick(state: GameState, elapsed: number, random: () => number = M
     }
   }
 
-  if (shift.elapsedMs >= SHIFT_MS) return closeShop(state)
+  if (shift.elapsedMs >= rules.durationMs) return closeShop(state, 'time')
   for (const customer of [...shift.queue]) {
     if (patienceLeft(state, customer) > 0) continue
     loseCustomer(state, customer, 'timeout')
     changed = true
   }
   if (!guided) {
-    changed = spawnSpecial(state, random) || changed
+    const phase = currentShiftPhase(state)
+    if (state.dayRules === 'short-105' && previousPhase.id !== phase.id && phase.intervalFactor > 0) {
+      if (previousPhase.intervalFactor > 0) {
+        shift.nextArrivalMs = shift.elapsedMs + Math.max(0, shift.nextArrivalMs - shift.elapsedMs) * phase.intervalFactor / previousPhase.intervalFactor
+      } else {
+        const dish = enabledDishes(state).find(dish => priceBand(dish, state.menu[dish].price) === 'low') ?? enabledDishes(state)[0]
+        shift.nextArrivalMs = shift.elapsedMs + (dish ? arrivalDelay(state, random, dish) : 2000)
+      }
+    }
+    changed = spawnHighlight(state, random) || changed
+    if (state.dayRules === 'short-105' && shift.elapsedMs >= rules.arrivalsEndMs && !shift.queue.length) return closeShop(state, 'queue-cleared')
     if (currentShiftPhase(state).intervalFactor > 0 && shift.elapsedMs >= shift.nextArrivalMs) changed = spawnCustomer(state, random) || changed
   } else if (!shift.queue.length && shift.elapsedMs >= shift.nextArrivalMs) changed = spawnCustomer(state, random) || changed
-  if (previousNotice?.id !== shiftNotice(state)?.id || previousPhase !== currentShiftPhase(state).id) changed = true
+  if (previousNotice?.id !== shiftNotice(state)?.id || previousPhase.id !== currentShiftPhase(state).id) changed = true
   return changed
 }
 
@@ -482,12 +559,13 @@ export function nextDay(state: GameState): Result {
   state.day++
   state.phase = 'prep'
   state.tally = emptyTally()
+  state.dayRules = 'short-105'
   state.daily = createDailyActivity(state.day, state.level)
   return success(state.level > oldLevel ? 'Tiệm lên cấp ' + state.level + '! Có món và nguyên liệu mới ở chợ.' : '')
 }
 
 function shopMinute(state: GameState): number {
-  return OPEN_MINUTE + Math.floor((CLOSE_MINUTE - OPEN_MINUTE) * (state.shift?.elapsedMs ?? 0) / SHIFT_MS)
+  return OPEN_MINUTE + Math.floor((CLOSE_MINUTE - OPEN_MINUTE) * (state.shift?.elapsedMs ?? 0) / getShiftRules(state).durationMs)
 }
 
 export function shopTime(state: GameState): string {

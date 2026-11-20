@@ -1,9 +1,9 @@
-import { engagementRules, ingredientIds, menuIds, profiles, regularStories } from './data.ts'
+import { engagementRules, ingredientIds, menuIds, profiles, regularStories, shiftPolicies } from './data.ts'
 import { salesRevenue } from './economy.ts'
 import { createDailyActivity, createStories } from './engagement.ts'
-import { CLOSE_MINUTE, OPEN_MINUTE, SHIFT_MS } from './game.ts'
+import { CLOSE_MINUTE, OPEN_MINUTE } from './game.ts'
 import { upgradeTutorialStep, validTutorialStep } from './tutorial.ts'
-import type { GameState } from './types.ts'
+import type { DailyMission, DailyReport, DayRulesId, GameState, HighlightVisit, SpecialKind } from './types.ts'
 
 export const SAVE_KEY = 'tiem-banh-trang-tron-nho-v1'
 
@@ -38,26 +38,40 @@ function mission(value: unknown): boolean {
     && value.rewarded === (value.progress === value.target)
 }
 
-function dailyActivity(value: unknown, day: number): boolean {
+function highlight(value: unknown, day: number, rulesId: DayRulesId): boolean {
+  if (value === null) return true
+  const rules = shiftPolicies[rulesId]
+  if (!object(value) || !integer(value.profile, 0, profiles.length - 1) || !timer(value.atMs)
+    || value.atMs < rules.highlightStartMs || (rulesId === 'legacy-240' ? value.atMs > rules.highlightEndMs : value.atMs >= rules.highlightEndMs)
+    || !['pending', 'arrived', 'skipped'].includes(String(value.status))) return false
+  if (value.kind === 'special') return day >= engagementRules.specialStartDay && value.profile === engagementRules.specialProfile
+    && value.storyStage === undefined && ['perfect', 'crispy'].includes(String(value.specialKind))
+  if (rulesId === 'legacy-240' || day < engagementRules.regularStartDay || value.specialKind !== undefined) return false
+  if (value.kind === 'story') return Boolean(regularStories[value.profile]) && integer(value.storyStage, 0, regularStories[value.profile].chapters.length - 1)
+  return value.kind === 'group' && value.storyStage === undefined
+}
+
+function dailyActivity(value: unknown, day: number, version: number, rulesId: DayRulesId): boolean {
   if (!object(value) || value.day !== day || !Array.isArray(value.missions) || value.missions.length !== 2
     || !value.missions.every(mission) || !object(value.missions[0]) || !object(value.missions[1])
     || value.missions[0].kind !== 'orders' || value.missions[1].kind === 'orders') return false
+  if (version >= 7) return highlight(value.highlight, day, rulesId)
   const special = value.special
-  return special === null || (day >= engagementRules.specialStartDay && object(special) && timer(special.atMs)
-    && special.atMs >= engagementRules.specialStartMs && special.atMs <= engagementRules.specialEndMs
-    && ['perfect', 'crispy'].includes(String(special.kind)) && ['pending', 'arrived', 'skipped'].includes(String(special.status)))
+  return special === null || (object(special) && highlight({ ...special, kind: 'special', profile: engagementRules.specialProfile, specialKind: special.kind }, day, 'legacy-240'))
 }
 
 function report(value: unknown, version: number): boolean {
   return tally(value, version) && integer(value.day, 1) && integer(value.level, 1, 4)
+    && (version < 7 || ['time', 'queue-cleared', 'manual'].includes(String(value.endReason)))
     && (version < 6 || (Array.isArray(value.missions) && value.missions.every(mission)))
     && (value.closedAt === undefined || integer(value.closedAt, OPEN_MINUTE, CLOSE_MINUTE))
     && ['sold', 'revenue', 'spoilage', 'overhead', 'wages', 'tax'].every(key => integer(value[key]))
     && ['profit', 'cashDelta', 'cash'].every(key => integer(value[key], Number.MIN_SAFE_INTEGER))
 }
 
-function validShift(value: unknown, version: number): boolean {
-  if (!object(value) || !timer(value.elapsedMs) || value.elapsedMs >= SHIFT_MS
+function validShift(value: unknown, version: number, rulesId: DayRulesId): boolean {
+  const duration = version < 7 ? shiftPolicies['legacy-240'].durationMs : shiftPolicies[rulesId].durationMs
+  if (!object(value) || !timer(value.elapsedMs) || value.elapsedMs >= duration
     || !timer(value.nextArrivalMs) || !Array.isArray(value.queue) || !object(value.bowl)) return false
   const validGuests = value.queue.every(guest => object(guest) && integer(guest.id, 1)
     && integer(guest.profile, 0, profiles.length - 1)
@@ -79,15 +93,23 @@ function validShift(value: unknown, version: number): boolean {
     && integer(bowl.sequenceErrors) && (bowl.pack === null || bowl.pack === 'bag' || bowl.pack === 'box')
 }
 
-type SavedGame = GameState | (Omit<GameState, 'version'> & { version: 1 | 2 | 3 | 4 | 5 })
+type LegacyGame = Omit<GameState, 'version' | 'dayRules' | 'daily' | 'reports'> & {
+  version: 1 | 2 | 3 | 4 | 5 | 6
+  daily: { day: number; missions: DailyMission[]; special: { atMs: number; kind: SpecialKind; status: HighlightVisit['status'] } | null } | null
+  reports: Array<Omit<DailyReport, 'endReason'>>
+}
+type SavedGame = GameState | LegacyGame
 
 function validSave(value: unknown): value is SavedGame {
-  if (!object(value) || !integer(value.version, 1, 6)
+  if (!object(value) || !integer(value.version, 1, 7)
     || !validTutorialStep(value.tutorialStep, value.version) || !integer(value.day, 1) || !integer(value.level, 1, 4)
     || !integer(value.cash, Number.MIN_SAFE_INTEGER) || !integer(value.reputation) || !integer(value.nextCustomerId, 1)
     || typeof value.staff !== 'boolean' || typeof value.muted !== 'boolean' || !tally(value.tally, value.version)) return false
-  if (value.version === 6 && ((value.daily !== null && !dailyActivity(value.daily, value.day))
+  const rulesId = value.version < 7 ? 'legacy-240' : value.dayRules
+  if (rulesId !== 'legacy-240' && rulesId !== 'short-105') return false
+  if (value.version >= 6 && ((value.daily !== null && !dailyActivity(value.daily, value.day, value.version, rulesId))
     || (value.phase === 'prep' && value.daily === null) || !object(value.stories)
+    || (rulesId === 'short-105' && value.daily === null)
     || !Object.keys(regularStories).every(profile => {
       const story = (value.stories as Record<string, unknown>)[profile]
       return object(story) && integer(story.stage, 0, 3) && integer(story.lastVisitDay, 0, value.day as number)
@@ -104,7 +126,7 @@ function validSave(value: unknown): value is SavedGame {
       && integer(review.stars, 1, 5) && typeof review.text === 'string'
       && (review.departureReason === undefined || ['priceRefusal', 'timeout', 'closed'].some(reason => review.departureReason === reason))
       && (review.reply === undefined || ['polite', 'friendly', 'voucher'].some(id => review.reply === id)))) return false
-  if (phase === 'shop') return validShift(shift, value.version)
+  if (phase === 'shop') return validShift(shift, value.version, rulesId)
   return shift === null && (phase === 'prep' || (phase === 'report' && reports.at(-1)?.day === value.day))
 }
 
@@ -112,15 +134,23 @@ export function parseSave(raw: string): GameState | null {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!validSave(parsed)) return null
-    if (parsed.version === 6) return parsed
+    if (parsed.version === 7) return parsed
     // Older builds credited sales when the day closed. Only open shifts have unpaid sales.
     const pendingRevenue = parsed.version === 1 && parsed.phase === 'shop' ? salesRevenue(parsed.tally) : 0
+    const oldHighlight = parsed.version === 6 ? parsed.daily?.special : null
     const upgraded: GameState = {
-      ...parsed, version: 6, cash: parsed.cash + pendingRevenue,
+      ...parsed, version: 7, dayRules: parsed.phase === 'prep' ? 'short-105' : 'legacy-240', cash: parsed.cash + pendingRevenue,
       daily: parsed.phase === 'prep' ? createDailyActivity(parsed.day, parsed.level) : null,
-      stories: createStories(),
-      tally: { ...parsed.tally, completedOrders: 0, tips: 0, xpEarned: 0 },
-      reports: parsed.reports.map(entry => ({ ...entry, completedOrders: 0, tips: 0, xpEarned: 0, missions: [] })),
+      stories: parsed.version === 6 ? parsed.stories : createStories(),
+      tally: parsed.version === 6 ? parsed.tally : { ...parsed.tally, completedOrders: 0, tips: 0, xpEarned: 0 },
+      reports: parsed.reports.map(entry => ({
+        ...entry, ...(parsed.version < 6 ? { completedOrders: 0, tips: 0, xpEarned: 0, missions: [] } : {}),
+        endReason: entry.closedAt === undefined || entry.closedAt === CLOSE_MINUTE ? 'time' : 'manual',
+      })),
+    }
+    if (parsed.phase !== 'prep' && parsed.version === 6 && parsed.daily) upgraded.daily = {
+      day: parsed.daily.day, missions: parsed.daily.missions,
+      highlight: oldHighlight ? { kind: 'special', profile: engagementRules.specialProfile, atMs: oldHighlight.atMs, status: oldHighlight.status, specialKind: oldHighlight.kind } : null,
     }
     if (upgraded.shift) {
       upgraded.shift = {

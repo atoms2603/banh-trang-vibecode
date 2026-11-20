@@ -14,6 +14,17 @@ export type Packaging = 'bag' | 'box'
 export type ReplyId = 'polite' | 'friendly' | 'voucher'
 export type MissionKind = 'orders' | 'perfect' | 'quick' | 'good'
 export type SpecialKind = 'perfect' | 'crispy'
+export type DayRulesId = 'legacy-240' | 'short-105'
+export type CloseReason = 'time' | 'queue-cleared' | 'manual'
+
+export interface HighlightVisit {
+  kind: 'special' | 'story' | 'group'
+  profile: number
+  atMs: number
+  status: 'pending' | 'arrived' | 'skipped'
+  storyStage?: number
+  specialKind?: SpecialKind
+}
 
 export interface Reward {
   cash: number
@@ -30,7 +41,7 @@ export interface DailyMission extends Reward {
 export interface DailyActivity {
   day: number
   missions: DailyMission[]
-  special: { atMs: number; kind: SpecialKind; status: 'pending' | 'arrived' | 'skipped' } | null
+  highlight: HighlightVisit | null
 }
 
 export interface StoryProgress {
@@ -150,6 +161,7 @@ export interface DailyReport extends DayTally {
   missions: DailyMission[]
   day: number
   closedAt?: number
+  endReason: CloseReason
   level: Level
   sold: number
   revenue: number
@@ -163,7 +175,8 @@ export interface DailyReport extends DayTally {
 }
 
 export interface GameState {
-  version: 6
+  version: 7
+  dayRules: DayRulesId
   tutorialStep?: number
   phase: Stage
   day: number

@@ -5,15 +5,17 @@ import { defaultPrice, fairPrice, money, priceBand, priceOf, sumReports } from '
 import {
   addHeat, addIngredient, changePrice, CLOSE_MINUTE, closeShop, currentCustomer, deliver, finishMix, makeOrder, mixDuration,
   mixProgress, newGame, nextDay, openShop, packBowl, PATIENCE_MS, purchase, replyToReview,
-  selectCustomer, SHIFT_MS, tick, toggleDish, toggleMix, toggleStaff, trashBowl,
+  selectCustomer, tick, toggleDish, toggleMix, toggleStaff, trashBowl,
 } from '../src/game.ts'
 import { parseSave } from '../src/storage.ts'
 import { departureLine } from '../src/reviews.ts'
 import { advanceTutorial, currentLesson, lessonAllows } from '../src/tutorial.ts'
 import { renderApp } from '../src/ui.ts'
+import { createDailyActivity } from '../src/engagement.ts'
 import type { GameState, Heat, IngredientId } from '../src/types.ts'
 
 const first = () => 0
+const SHIFT_MS = 240000
 
 function setUp(): GameState {
   const state = newGame()
@@ -22,7 +24,10 @@ function setUp(): GameState {
 }
 
 function start(state: GameState, random = first): void {
-  assert.equal(openShop(state).ok, true)
+  // These original rule tests also protect open shifts migrated from older builds.
+  state.dayRules = 'legacy-240'
+  if (state.daily) state.daily = createDailyActivity(state.day, state.level, 'legacy-240')
+  assert.equal(openShop(state, () => .99).ok, true)
   tick(state, 901, random)
 }
 

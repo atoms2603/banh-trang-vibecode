@@ -1,6 +1,6 @@
 import { avatar, bowlArt, food, guestSprite, icon, storefront, trayContents } from './art.ts'
 import { heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, replies, staffWage, missionLabels, regularStories, specialChallenges } from './data.ts'
-import { currentShiftPhase, shiftNotice } from './engagement.ts'
+import { currentShiftPhase, getShiftRules, shiftNotice } from './engagement.ts'
 import { hasStock, money, priceBand, priceOf, sumReports } from './economy.ts'
 import { canDeliver, CLOSE_MINUTE, currentCustomer, enabledDishes, formatShopTime, marketUnlocked, mixProgress, OPEN_MINUTE, openingProblem, patienceLeft, shopTime } from './game.ts'
 import type { Bowl, Customer, DailyMission, DailyReport, GameState, IngredientId, Level, MenuId, Order, ReplyId } from './types.ts'
@@ -220,7 +220,7 @@ function queueScene(state: GameState, options: ScreenOptions): string {
     <img class="ganh-art" src="./art/ganh.webp" width="640" height="480" alt="Gánh bánh tráng với hai thúng tre và dù hồng" draggable="false">
     ${speaking ? `<div class="customer-speech" id="customer-speech"><div class="customer-speech-body"><strong>${profiles[speaking.profile].name}</strong><br>${escape(line)}</div></div>` : ''}
     <div class="customers">${queue.length ? queue.map(customer => customerFigure(state, customer, options)).join('')
-      : `<p class="queue-empty">${currentShiftPhase(state).intervalFactor === 0 ? 'Đã ngừng đón khách mới.' : enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
+      : `<p class="queue-empty">${currentShiftPhase(state).id === 'closing' ? 'Đã ngừng đón khách mới.' : enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
     ${options.departure ? `<div class="departure" style="--departure-duration:${options.departure.durationMs}ms" aria-hidden="true"><span>${escape(options.departure.text)}</span><div>${guestSprite(options.departure.profile)}</div></div>` : ''}
   </section>`
 }
@@ -495,10 +495,12 @@ function reportBody(state: GameState, options: ScreenOptions): string {
 }
 
 function reportScreen(state: GameState, options: ScreenOptions): string {
-  const closedAt = state.reports.at(-1)?.closedAt ?? CLOSE_MINUTE
+  const report = state.reports.at(-1)
+  const closedAt = report?.closedAt ?? CLOSE_MINUTE
+  const reason = report?.endReason === 'queue-cleared' ? 'Đã giao hết đơn' : report?.endReason === 'manual' ? 'Đã kết thúc sớm' : 'Tiệm đã đóng cửa'
   return `<main class="game-screen report-screen">
     ${statusStrip(state, false)}
-    <div class="screen-heading"><div><p class="eyebrow">${formatShopTime(closedAt)} · ${closedAt < CLOSE_MINUTE ? 'Đã kết thúc sớm' : 'Tiệm đã đóng cửa'}</p><h1>Hết ngày ${state.day}</h1></div><div class="report-icon">${icon('ledger', 25)}</div></div>
+    <div class="screen-heading"><div><p class="eyebrow">${formatShopTime(closedAt)} · ${reason}</p><h1>Hết ngày ${state.day}</h1></div><div class="report-icon">${icon('ledger', 25)}</div></div>
     <h2 class="financial-heading">Tổng kết tài chính</h2>
     ${reportBody(state, options)}
     <div class="bottom-actions"><button type="button" class="button primary" data-action="next-day">Chuẩn bị ngày ${state.day + 1} ${icon('arrow', 18)}</button></div>
@@ -523,20 +525,21 @@ function reviewList(state: GameState | null, options: ScreenOptions): string {
   }).join('')}</div>`
 }
 
-function guide(): string {
+function guide(state: GameState | null): string {
+  const duration = !state || getShiftRules(state).durationMs === 105000 ? 'Ca tối đa 1:45; ngừng đón khách ở giây 85 và tự chốt khi giao hết hàng chờ.' : 'Ca đang chơi tiếp tục dài 4 phút; ngày tiếp theo chuyển sang ca tối đa 1 phút 45 giây.'
   return `<ol class="guide-list">
     <li><div><strong>Đi chợ và chọn menu</strong><p>Nhập bánh tráng, muối tôm, tắc và bộ đóng gói để bán món muối tắc. Mở Menu hôm nay để đổi món hoặc chỉnh giá.</p></div></li>
-    <li><div><strong>Đọc đơn trước khi làm</strong><p>Chọn một khách rồi xem phiếu trên thanh gỗ bên phải. So hình nguyên liệu trên phiếu với các khay. Chạm hoặc kéo nguyên liệu lên thau.</p></div></li>
+    <li><div><strong>Đọc đơn trước khi làm</strong><p>Chọn một khách rồi xem phiếu cạnh khu chế biến. So hình nguyên liệu trên phiếu với các khay. Chạm hoặc kéo nguyên liệu lên thau.</p></div></li>
     <li><div><strong>Nêm rồi trộn đến 100%</strong><p>Cho bánh tráng vào trước, thêm tắc rồi các gia vị theo đơn. Bấm Trộn đều tay và đợi thanh chạy hết.</p></div></li>
     <li><div><strong>Thêm topping, trộn nhẹ và giao</strong><p>Thêm rau, topping rồi mới rắc đậu phộng hoặc hành phi. Trộn nhẹ, chọn bao bì kèm đũa và bấm Giao món.</p></div></li>
-    <li><div><strong>Xem sổ cuối ngày</strong><p>Ca bán dài 4 phút, đến 21:00. Có thể Kết thúc sớm ở quầy. Hoàn thành nhiệm vụ, trả lời đánh giá để tích EXP và mở cấp vào ngày kế tiếp.</p></div></li>
+    <li><div><strong>Xem sổ cuối ngày</strong><p>${duration} Có thể Kết thúc sớm ở quầy. Chi phí ngày vẫn giữ nguyên. Hoàn thành nhiệm vụ, trả lời đánh giá để tích EXP và mở cấp vào ngày kế tiếp.</p></div></li>
   </ol>`
 }
 
 export function dialogContent(state: GameState | null, options: ScreenOptions): string {
   if (!options.modal) return ''
   const titles = { help: 'Hướng dẫn nhanh', reviews: 'Đánh giá của khách', reset: 'Mở một tiệm mới?', ledger: 'Sổ thu chi', 'close-shop': 'Kết thúc ngày sớm?', missions: 'Nhiệm vụ hôm nay' }
-  const content = options.modal === 'help' ? guide() : options.modal === 'reviews' ? reviewList(state, options)
+  const content = options.modal === 'help' ? guide(state) : options.modal === 'reviews' ? reviewList(state, options)
     : options.modal === 'missions' && state ? `${missionDetails(state.daily?.missions ?? [])}<p class="mission-help">Nhận đủ mọi bịch của một khách mới tính một đơn. Thưởng tự cộng vào két. EXP mở cấp quán vào ngày kế tiếp.</p>`
     : options.modal === 'ledger' && state ? reportBody(state, options)
     : options.modal === 'close-shop' && state ? `<p class="reset-copy">Tiệm sẽ đóng lúc ${shopTime(state)} và chốt sổ ngay. Chi phí trong ngày vẫn được tính.</p>

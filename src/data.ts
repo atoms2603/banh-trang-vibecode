@@ -64,7 +64,7 @@ export const levels: Record<Level, { name: string; threshold: number; overhead: 
 export const heatLabels = ['Không cay', 'Ít cay', 'Cay vừa', 'Siêu cay'] as const
 export const staffWage = 20000
 
-export const shiftRhythm = [
+export const legacyShiftRhythm = [
   { id: 'warmup', untilMs: 40000, label: 'Khởi động', intervalFactor: 1.3 },
   { id: 'normal', untilMs: 90000, label: 'Khách ghé đều', intervalFactor: 1 },
   { id: 'rush', untilMs: 110000, label: 'Giờ tan học!', intervalFactor: .6 },
@@ -73,8 +73,27 @@ export const shiftRhythm = [
   { id: 'closing', untilMs: 240000, label: 'Giao nốt hàng chờ', intervalFactor: 0 },
 ] as const
 
+export const shiftRhythm = [
+  { id: 'warmup', untilMs: 10000, label: 'Khởi động', intervalFactor: 1.3 },
+  { id: 'normal', untilMs: 30000, label: 'Khách ghé đều', intervalFactor: 1 },
+  { id: 'rush', untilMs: 45000, label: 'Giờ tan học!', intervalFactor: .6 },
+  { id: 'rest', untilMs: 55000, label: 'Khoảng thở', intervalFactor: 0 },
+  { id: 'last', untilMs: 85000, label: 'Lượt khách cuối', intervalFactor: 1 },
+  { id: 'closing', untilMs: 105000, label: 'Giao nốt hàng chờ', intervalFactor: 0 },
+] as const
+
+export const shiftPolicies = {
+  'legacy-240': {
+    durationMs: 240000, arrivalsEndMs: 180000, highlightStartMs: 160000, highlightEndMs: 180000,
+    rhythm: legacyShiftRhythm, orderTargets: [10, 10, 12, 14], qualityTargets: { perfect: 3, quick: 4, good: 5 },
+  },
+  'short-105': {
+    durationMs: 105000, arrivalsEndMs: 85000, highlightStartMs: 60000, highlightEndMs: 85000,
+    rhythm: shiftRhythm, orderTargets: [6, 7, 8, 9], qualityTargets: { perfect: 2, quick: 3, good: 3 },
+  },
+} as const
+
 export const engagementRules = {
-  shiftDurationMs: 240000,
   firstArrivalMs: 900,
   patienceMs: 70000,
   extraPortionPatienceMs: 18000,
@@ -83,14 +102,10 @@ export const engagementRules = {
   rushWarningMs: 15000,
   specialWarningMs: 10000,
   specialChance: .35,
-  specialStartMs: 160000,
-  specialEndMs: 180000,
   specialProfile: 4,
   firstDayOrderTarget: 5,
   firstDayPerfectTarget: 2,
-  orderTargets: [10, 10, 12, 14],
   qualityRotation: ['perfect', 'quick', 'good'] as readonly MissionKind[],
-  qualityTargets: { perfect: 3, quick: 4, good: 5 },
   orderReward: { cash: 5000, xp: 5 },
   qualityReward: { cash: 3000, xp: 3 },
   storyReward: { cash: 1500, xp: 2 },

@@ -1,39 +1,46 @@
-import { engagementRules, regularStories, shiftRhythm, specialChallenges } from './data.ts'
+import { engagementRules, regularStories, shiftPolicies, specialChallenges } from './data.ts'
 import { awardBonus } from './economy.ts'
-import type { Bowl, Customer, DailyActivity, DailyMission, GameState, MissionKind, Stars, StoryProgress } from './types.ts'
+import type { Bowl, Customer, DailyActivity, DailyMission, DayRulesId, GameState, MissionKind, Stars, StoryProgress } from './types.ts'
+
+export function getShiftRules(state: Pick<GameState, 'dayRules'>) {
+  return shiftPolicies[state.dayRules]
+}
 
 export function createStories(): Record<number, StoryProgress> {
   return Object.fromEntries(Object.keys(regularStories).map(profile => [profile, { stage: 0, lastVisitDay: 0 }]))
 }
 
-export function createDailyActivity(day: number, level: number): DailyActivity {
+export function createDailyActivity(day: number, level: number, dayRules: DayRulesId = 'short-105'): DailyActivity {
+  const rules = shiftPolicies[dayRules]
   const quality = day === 1 ? 'perfect' : engagementRules.qualityRotation[(day - 2) % engagementRules.qualityRotation.length]
-  const targets: Record<MissionKind, number> = { orders: 0, ...engagementRules.qualityTargets }
+  const targets: Record<MissionKind, number> = { orders: 0, ...rules.qualityTargets }
   const orders: DailyMission = {
-    kind: 'orders', target: day === 1 ? engagementRules.firstDayOrderTarget : engagementRules.orderTargets[level - 1],
+    kind: 'orders', target: day === 1 ? engagementRules.firstDayOrderTarget : rules.orderTargets[level - 1],
     progress: 0, rewarded: false, ...engagementRules.orderReward,
   }
   const second: DailyMission = {
     kind: quality, target: day === 1 ? engagementRules.firstDayPerfectTarget : targets[quality],
     progress: 0, rewarded: false, ...engagementRules.qualityReward,
   }
-  return { day, missions: [orders, second], special: null }
+  return { day, missions: [orders, second], highlight: null }
 }
 
 export function currentShiftPhase(state: GameState) {
   if (!state.daily) return { id: 'normal', label: 'Ca bán', intervalFactor: 1 }
+  const rules = getShiftRules(state)
   const elapsed = state.shift?.elapsedMs ?? 0
-  if (elapsed >= engagementRules.specialEndMs) return shiftRhythm[5]
-  if (state.day < engagementRules.regularStartDay) return { ...shiftRhythm[0], label: 'Ca đầu nhẹ nhàng' }
-  return shiftRhythm.find(phase => elapsed < phase.untilMs) ?? shiftRhythm[5]
+  if (elapsed >= rules.arrivalsEndMs) return rules.rhythm[5]
+  if (state.day < engagementRules.regularStartDay) return { ...rules.rhythm[0], label: 'Ca đầu nhẹ nhàng' }
+  return rules.rhythm.find(phase => elapsed < phase.untilMs) ?? rules.rhythm[5]
 }
 
 export function shiftNotice(state: GameState): { id: 'warning' | 'special'; label: string } | null {
   const elapsed = state.shift?.elapsedMs ?? 0
-  const special = state.daily?.special
-  if (special?.status === 'pending' && elapsed >= special.atMs - engagementRules.specialWarningMs
-    && elapsed <= engagementRules.specialEndMs) return { id: 'special', label: 'Khách mời sắp ghé' }
-  const rushStart = shiftRhythm[1].untilMs
+  const rules = getShiftRules(state)
+  const highlight = state.daily?.highlight
+  if (highlight?.status === 'pending' && elapsed >= highlight.atMs - engagementRules.specialWarningMs
+    && elapsed < rules.highlightEndMs) return { id: 'special', label: 'Khách mời sắp ghé' }
+  const rushStart = rules.rhythm[1].untilMs
   if (state.daily && state.day >= engagementRules.regularStartDay && elapsed >= rushStart - engagementRules.rushWarningMs && elapsed < rushStart) {
     const seconds = Math.ceil((rushStart - elapsed) / 1000)
     return { id: 'warning', label: `Tăng tốc sau ${seconds}s` }
