@@ -207,6 +207,7 @@ function renderScreen(move = false): void {
     deferredRender = true
     return
   }
+  const pageScroll = { left: window.scrollX, top: window.scrollY }
   const active = document.activeElement instanceof HTMLButtonElement && screen.contains(document.activeElement)
     ? { ...document.activeElement.dataset } : null
   options.previousCustomers = new Set(Array.from(screen.querySelectorAll<HTMLElement>('[data-action=customer]'),
@@ -235,6 +236,9 @@ function renderScreen(move = false): void {
   if (shop && !move) shop.scrollTop = shopScroll
   const details = screen.querySelector<HTMLElement>('.order-details')
   if (details && details.dataset.orderId === previousDetails?.dataset.orderId) details.scrollTop = detailScroll
+  // Phones scroll the document, not .shop-screen. Restore it after replacing
+  // focused controls; tutorial steps may still deliberately reveal their target.
+  if (!move) window.scrollTo({ ...pageScroll, behavior: 'instant' })
   renderTutorial()
   updateLayout()
 }
