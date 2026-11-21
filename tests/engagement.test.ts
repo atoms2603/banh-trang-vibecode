@@ -503,12 +503,14 @@ test('HUD and receipts expose mission progress, story dialogue, special requirem
   const options = { home: false, initialMute: false, prepTab: 'market' as const, previousCustomers: new Set<number>(), customerSpeechId: guest.id,
     modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day' as const, reportDay: 2, warning: '', departure: null }
   let html = renderApp(state, options)
-  assert.match(html, /Đơn trọn vẹn/)
-  assert.match(html, /0\/10/)
+  assert.match(html, /data-action="shop-menu"/)
+  const menu = () => dialogContent(state, { ...options, modal: 'shop-menu' })
+  assert.match(menu(), /Đơn trọn vẹn/)
+  assert.match(menu(), /0\/10/)
   assert.match(html, /Con sắp kiểm tra/)
   state.reputation = 40
   html = renderApp(state, options)
-  assert.match(html, /Đủ EXP lên cấp/)
+  assert.match(menu(), /Đủ EXP lên cấp/)
   const details = dialogContent(state, { ...options, modal: 'missions' })
   assert.match(details, /5.000đ/)
   assert.match(details, /mọi bịch/)

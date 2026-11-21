@@ -28,7 +28,7 @@ const lessons: readonly Lesson[] = [
   { action: 'mix', instruction: 'Bấm Trộn đều tay để bánh thấm gia vị.' },
   { action: 'mix-ready', instruction: 'Đợi thanh tiến độ đạt 100%.' },
   { action: 'final-mix', instruction: 'Bấm Trộn nhẹ để các sợi bánh hòa đều.' },
-  { action: 'pack', id: 'bag', instruction: 'Chọn Bịch nilon. Tiệm sẽ kèm một đôi đũa tre.' },
+  { action: 'pack', id: 'bag', instruction: 'Bấm Đóng bịch + đũa ở dưới. Số bộ gói còn lại hiển thị ngay trên nút.' },
   { action: 'deliver', instruction: 'Bấm Giao món để phục vụ vị khách đầu tiên.' },
 ]
 

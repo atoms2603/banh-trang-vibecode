@@ -90,7 +90,7 @@ function validShift(value: unknown, version: number, rulesId: DayRulesId): boole
   return validGuests && (value.activeId === null ? value.queue.length === 0 : value.queue.some(guest => guest.id === value.activeId))
     && recipe(bowl.ingredients) && integer(bowl.heat, 0, 3) && timer(bowl.mixMs) && bowl.mixMs <= 2400
     && ['mixing', 'finalMixed', 'soggy'].every(flag => typeof bowl[flag] === 'boolean')
-    && integer(bowl.sequenceErrors) && (bowl.pack === null || bowl.pack === 'bag' || bowl.pack === 'box')
+    && integer(bowl.sequenceErrors) && (bowl.pack === null || bowl.pack === 'bag')
 }
 
 type LegacyGame = Omit<GameState, 'version' | 'dayRules' | 'daily' | 'reports'> & {
@@ -133,6 +133,10 @@ function validSave(value: unknown): value is SavedGame {
 export function parseSave(raw: string): GameState | null {
   try {
     const parsed: unknown = JSON.parse(raw)
+    // Existing packed meals remain deliverable without charging another set.
+    if (object(parsed) && object(parsed.shift) && object(parsed.shift.bowl) && parsed.shift.bowl.pack === 'box') {
+      parsed.shift.bowl.pack = 'bag'
+    }
     if (!validSave(parsed)) return null
     if (parsed.version === 7) return parsed
     // Older builds credited sales when the day closed. Only open shifts have unpaid sales.

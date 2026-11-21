@@ -1,6 +1,7 @@
 import '@fontsource-variable/quicksand'
 import '@fontsource-variable/nunito'
 import './styles.css'
+import './counter.css'
 
 import { backgroundMusic, mixingSound, sound } from './audio.ts'
 import { food, icon } from './art.ts'
@@ -17,6 +18,8 @@ import { advanceTutorial, currentLesson, lessonAllows } from './tutorial.ts'
 import { dialogContent, renderApp, updateClocks } from './ui.ts'
 import type { Modal, ScreenOptions } from './ui.ts'
 import type { GameState, Heat, IngredientId, ReplyId } from './types.ts'
+import { counterTabs, ingredientPage, ingredientTab, initialCounterTab } from './counter.ts'
+import type { CounterTab } from './counter.ts'
 
 const app = document.querySelector<HTMLElement>('#app')!
 const screen = document.createElement('div')
@@ -43,6 +46,7 @@ const options: ScreenOptions = {
   modal: null, heatOpen: false, replyFor: null,
   reportPeriod: 'day', reportDay: state?.reports.at(-1)?.day ?? 1, warning: loaded.warning,
   departure: null,
+  counterTab: state ? initialCounterTab(state) : 'seasoning', trayPages: {},
 }
 
 let lastFrame = performance.now()
@@ -181,7 +185,7 @@ function positionCustomerSpeech(): void {
   // Keep the bubble outside the scene's clipped artwork and entrance animations.
   if (speech.parentElement !== app) app.append(speech)
   const anchor = sprite.getBoundingClientRect()
-  speech.hidden = anchor.bottom <= 0 || anchor.top >= window.innerHeight
+  speech.hidden = Boolean(options.modal) || anchor.bottom <= 0 || anchor.top >= window.innerHeight
   if (speech.hidden) return
   const { width, height } = speech.getBoundingClientRect()
   const center = anchor.left + anchor.width / 2
@@ -202,8 +206,9 @@ function updateLayout(): void {
 }
 
 function resizeLayout(): void {
+  document.documentElement.style.setProperty('--game-height', (window.visualViewport?.height ?? window.innerHeight) + 'px')
   updateLayout()
-  tutorialTarget?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  if (!document.body.classList.contains('counter-active')) tutorialTarget?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   requestAnimationFrame(updateLayout)
 }
 
@@ -212,6 +217,18 @@ function renderScreen(move = false): void {
   if (drag?.ghost && !move) {
     deferredRender = true
     return
+  }
+  const compact = !options.home && state?.phase === 'shop'
+  document.body.classList.toggle('counter-active', compact)
+  document.documentElement.classList.toggle('counter-active', compact)
+  document.documentElement.style.setProperty('--game-height', (window.visualViewport?.height ?? window.innerHeight) + 'px')
+  // Reveal the required bank/page before measuring the tutorial spotlight.
+  const lesson = !options.home ? currentLesson(state) : undefined
+  if (state && lesson?.action === 'ingredient') {
+    const id = lesson.id as IngredientId
+    const tab = ingredientTab(id)
+    options.counterTab = tab
+    options.trayPages = { ...options.trayPages, [tab]: ingredientPage(state, id) }
   }
   const pageScroll = { left: window.scrollX, top: window.scrollY }
   const active = document.activeElement instanceof HTMLButtonElement && screen.contains(document.activeElement)
@@ -280,6 +297,8 @@ function showModal(name: Modal): void {
   lastFrame = performance.now()
   if (persist()) renderScreen()
   renderModal()
+  renderTutorial()
+  positionCustomerSpeech()
   if (!name && modalTrigger) {
     restoreFocus(screen, modalTrigger)
     modalTrigger = null
@@ -297,6 +316,8 @@ function beginGame(): void {
   options.reportDay = 1
   options.reportPeriod = 'day'
   options.departure = null
+  options.counterTab = 'seasoning'
+  options.trayPages = {}
   showModal(null)
   renderScreen(true)
 }
@@ -310,11 +331,20 @@ function announceDeparture(profile: number, text: string, durationMs = 1700): vo
   }, durationMs)
 }
 
-function showPayment(amount: number): void {
+function showPayment(amount: number, origin?: DOMRect): void {
+  const register = screen.querySelector('.status-cash')?.getBoundingClientRect()
+  const scene = screen.querySelector('.queue-scene')?.getBoundingClientRect()
+  if (!register || !scene) return
+  const x = origin ? origin.left + origin.width / 2 : scene.left + scene.width / 2
+  const y = origin ? origin.top + origin.height / 3 : scene.top + scene.height / 2
   const burst = document.createElement('div')
   burst.className = 'payment-burst'
   burst.setAttribute('aria-hidden', 'true')
-  burst.innerHTML = `<strong class="payment-amount">${icon('coin', 22)} +${money(amount)}</strong>`
+  burst.style.setProperty('--pay-x', x + 'px')
+  burst.style.setProperty('--pay-y', y + 'px')
+  burst.style.setProperty('--pay-dx', register.left + register.width / 2 - x + 'px')
+  burst.style.setProperty('--pay-dy', register.top + register.height / 2 - y + 'px')
+  burst.innerHTML = `<strong class="payment-amount">+${money(amount)}</strong>${Array.from({ length: 7 }, (_, i) => `<span class="payment-coin" style="--coin-i:${i};--coin-spread:${(i - 3) * 13}px">${icon('coin', 19)}</span>`).join('')}`
   burst.querySelector('.payment-amount')?.addEventListener('animationend', () => {
     if (state?.phase !== 'shop' || options.home) return
     const currentRegister = screen.querySelector('.status-cash')
@@ -373,7 +403,7 @@ function handle(button: HTMLButtonElement): void {
   }
   if (action === 'reset-confirm') return beginGame()
   if (action === 'modal-close') return showModal(null)
-  if (action === 'help' || action === 'reviews' || action === 'ledger' || action === 'missions') return showModal(action)
+  if (action === 'help' || action === 'reviews' || action === 'ledger' || action === 'missions' || action === 'shop-menu' || action === 'order') return showModal(action)
   if (action === 'mute') {
     if (state) {
       state.muted = !state.muted
@@ -382,9 +412,23 @@ function handle(button: HTMLButtonElement): void {
     backgroundMusic(muted())
     sound('tap', muted())
     renderScreen()
+    if (options.modal) renderModal()
     return
   }
   if (!state) return
+
+  if (action === 'counter-tab' && id && Object.hasOwn(counterTabs, id)) {
+    options.counterTab = id as CounterTab
+    options.heatOpen = false
+    renderScreen()
+    return
+  }
+  if (action === 'tray-page') {
+    const tab = options.counterTab ?? initialCounterTab(state)
+    options.trayPages = { ...options.trayPages, [tab]: Number(id) }
+    renderScreen()
+    return
+  }
 
   if (action === 'read-order' && currentLesson(state)?.action === 'read-order') {
     advanceTutorial(state, action)
@@ -400,6 +444,7 @@ function handle(button: HTMLButtonElement): void {
   }
 
   if (action === 'home' || action === 'continue') {
+    if (options.modal) showModal(null)
     options.home = action === 'home'
     lastFrame = performance.now()
     persist()
@@ -444,6 +489,7 @@ function handle(button: HTMLButtonElement): void {
   const dish = menuIds.find(key => key === id)
 
   const guest = currentCustomer(state)
+  const paymentOrigin = action === 'deliver' ? screen.querySelector(`[data-action="customer"][data-id="${guest?.id}"]`)?.getBoundingClientRect() : undefined
   const cashBefore = state.cash
   const xpBefore = state.reputation
   const rewardedBefore = state.daily?.missions.filter(task => task.rewarded).length ?? 0
@@ -461,6 +507,8 @@ function handle(button: HTMLButtonElement): void {
       if (result.ok) {
         options.heatOpen = false
         options.departure = null
+        options.counterTab = 'seasoning'
+        options.trayPages = {}
         lastFrame = performance.now()
         move = true
       }
@@ -472,6 +520,7 @@ function handle(button: HTMLButtonElement): void {
         if (buttonAction === 'customer') options.customerSpeechId = customerId
         else if (guest?.id !== customerId) options.customerSpeechId = null
         if (guest?.id !== customerId) options.heatOpen = false
+        if (guest?.id !== customerId) { options.counterTab = 'seasoning'; options.trayPages = {} }
       }
       break
     }
@@ -480,11 +529,14 @@ function handle(button: HTMLButtonElement): void {
       options.heatOpen = false
       break
     case 'mix': result = toggleMix(state); options.heatOpen = false; break
-    case 'final-mix': result = finishMix(state); break
-    case 'pack': if (id === 'bag' || id === 'box') result = packBowl(state, id); break
+    case 'final-mix':
+      result = finishMix(state)
+      break
+    case 'pack': if (id === 'bag') result = packBowl(state, id); break
     case 'trash':
       result = trashBowl(state)
       if (result.ok) options.heatOpen = false
+      if (result.ok) { options.counterTab = 'seasoning'; options.trayPages = {} }
       break
     case 'deliver':
       result = deliver(state)
@@ -493,6 +545,8 @@ function handle(button: HTMLButtonElement): void {
         sound('serve', muted())
         if (guest.servedPortions.length === guest.order.quantity) announceDeparture(guest.profile, result.departureText ?? 'Đã nhận đủ món!', result.departureText ? 3500 : 1700)
         options.heatOpen = false
+        options.counterTab = 'seasoning'
+        options.trayPages = {}
       }
       break
     case 'next-day':
@@ -517,7 +571,7 @@ function handle(button: HTMLButtonElement): void {
   if (completedLesson) message += ' · Xong hướng dẫn!'
   flash(message, result.ok)
   renderScreen(move)
-  if (payment !== undefined) showPayment(payment)
+  if (payment !== undefined) showPayment(payment, paymentOrigin)
 }
 
 app.addEventListener('click', event => {
@@ -529,6 +583,19 @@ app.addEventListener('click', event => {
     || button.dataset.action === 'mix' && performance.now() < suppressMixClickUntil
   )) return
   handle(button)
+})
+
+screen.addEventListener('keydown', event => {
+  if (!(event.target instanceof HTMLButtonElement) || !event.target.matches('[role="tab"]')
+    || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  const tabs = Array.from(screen.querySelectorAll<HTMLButtonElement>('.counter-tabs button:not([inert])'))
+  const index = tabs.indexOf(event.target)
+  if (index < 0) return
+  event.preventDefault()
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+    : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+  handle(tabs[next])
+  restoreFocus(screen, { action: 'counter-tab', id: tabs[next].dataset.id })
 })
 
 screen.addEventListener('pointerdown', event => {
@@ -625,6 +692,10 @@ function loop(now: number): void {
   if (changed) {
     if (!state.shift) return showReport(state)
     if (guest?.id !== currentCustomer(state)?.id || (progress < 100 && mixProgress(state) >= 100)) options.heatOpen = false
+    if (guest?.id !== currentCustomer(state)?.id) {
+      options.counterTab = initialCounterTab(state)
+      options.trayPages = {}
+    }
     if (state.reviews.length > reviewCount) {
       const review = state.reviews.at(-1)!
       announceDeparture(review.profile, departureLine(review))

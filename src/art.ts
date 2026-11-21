@@ -227,9 +227,7 @@ export function storefront(level: Level): string {
 
 export function bowlArt(bowl?: Bowl): string {
   if (bowl?.pack) {
-    const packageArt = bowl.pack === 'bag'
-      ? '<path d="M75 30h69l17 61c-21 6-79 6-100 0z" fill="#fff1db" fill-opacity=".84"/><path d="M75 30c0-13 15-21 26-18l8 10 9-10c15-3 26 5 26 18" fill="none"/><path d="M76 80c7-18 50-24 67-7l5 13c-25 4-48 5-77 0z" fill="#e4b77d"/><path d="m87 79 9-5m16 7 7-3m14-3 7 4" stroke="#78975e"/>'
-      : '<path d="M55 45h110l-5 42-17 9H78l-18-9z" fill="#e6b88a"/><path d="m65 29 15-13h62l15 11 17 19-11 12H57L45 46z" fill="#f8d8a4"/><path d="M94 38h31" stroke="#a6724d"/>'
+    const packageArt = '<path d="M75 30h69l17 61c-21 6-79 6-100 0z" fill="#fff1db" fill-opacity=".84"/><path d="M75 30c0-13 15-21 26-18l8 10 9-10c15-3 26 5 26 18" fill="none"/><path d="M76 80c7-18 50-24 67-7l5 13c-25 4-48 5-77 0z" fill="#e4b77d"/><path d="m87 79 9-5m16 7 7-3m14-3 7 4" stroke="#78975e"/>'
     return `<svg class="bowl-art" aria-hidden="true" viewBox="0 0 220 110"><ellipse cx="112" cy="98" rx="69" ry="7" fill="#bc9378" opacity=".22"/><g ${outlines}>${packageArt}<path d="m133 75 43-54m-38 57 43-54" stroke="#99673f" stroke-width="2.6"/></g></svg>`
   }
   const hasRice = !!bowl?.ingredients.rice

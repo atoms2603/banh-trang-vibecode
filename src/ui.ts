@@ -5,8 +5,10 @@ import { hasStock, money, priceBand, priceOf, sumReports } from './economy.ts'
 import { canDeliver, CLOSE_MINUTE, currentCustomer, enabledDishes, formatShopTime, marketUnlocked, mixProgress, OPEN_MINUTE, openingProblem, patienceLeft, shopTime } from './game.ts'
 import type { Bowl, Customer, DailyMission, DailyReport, GameState, IngredientId, Level, MenuId, Order, ReplyId } from './types.ts'
 import { currentLesson } from './tutorial.ts'
+import { counterItems, counterPage, counterTabs, initialCounterTab, missingIngredient, trayPageSize } from './counter.ts'
+import type { CounterTab } from './counter.ts'
 
-export type Modal = 'help' | 'reviews' | 'reset' | 'ledger' | 'close-shop' | 'missions' | null
+export type Modal = 'help' | 'reviews' | 'reset' | 'ledger' | 'close-shop' | 'missions' | 'shop-menu' | 'order' | null
 export interface ScreenOptions {
   home: boolean
   initialMute: boolean
@@ -20,6 +22,8 @@ export interface ScreenOptions {
   reportDay: number
   warning: string
   departure: { profile: number; text: string; durationMs: number } | null
+  counterTab?: CounterTab
+  trayPages?: Partial<Record<CounterTab, number>>
 }
 
 function escape(value: string): string {
@@ -43,6 +47,18 @@ function header(state: GameState | null, home: boolean, initialMute: boolean): s
   const total = state?.reviews.reduce((sum, review) => sum + review.stars, 0) ?? 0
   const count = state?.reviews.length ?? 0
   const silent = state?.muted ?? initialMute
+  if (!home && state?.phase === 'shop') {
+    const notice = shiftNotice(state)
+    return `<header class="topbar counter-hud" aria-label="Thông tin ca bán">
+      <span class="counter-day">${icon('calendar', 16)} Ngày ${state.day}</span>
+      <span class="counter-time">${icon('clock', 16)}<span><b data-clock>${shopTime(state)}</b><small>Đóng ${formatShopTime(CLOSE_MINUTE)}</small></span></span>
+      <button type="button" class="counter-rating" data-action="reviews" aria-label="${starsLabel(total, count)} sao, ${count} đánh giá">${icon('star', 14)} ${starsLabel(total, count)}</button>
+      <span class="status-cash">${icon('coin', 17)} <strong>${money(state.cash)}</strong></span>
+      <div class="counter-extra-hud" aria-label="Cấp tiệm và nhiệm vụ">${activityProgress(state)}</div>
+      <button type="button" class="icon-button counter-menu-button" data-action="shop-menu" aria-label="Menu ca bán, nhiệm vụ và EXP">${icon('menu', 21)}<span class="counter-menu-dot" ${state.level < 4 && state.reputation >= levels[(state.level + 1) as Level].threshold ? '' : 'hidden'}></span></button>
+      <span class="counter-notice" role="status" ${notice?.id === 'warning' || notice?.id === 'special' ? '' : 'hidden'}>${notice ? icon(notice.id === 'special' ? 'star' : 'bell', 14) : ''}<span data-counter-notice>${notice?.label ?? ''}</span></span>
+    </header>`
+  }
   return `<header class="topbar">
     <button type="button" class="brand" data-action="${home ? 'brand' : 'home'}" aria-label="Màn hình chính">
       <span class="brand-icon">${icon('storefront', 23)}</span>
@@ -77,11 +93,19 @@ function homeScreen(state: GameState | null): string {
   </main>`
 }
 
-function statusStrip(state: GameState, shop: boolean): string {
+function activityProgress(state: GameState): string {
   const nextLevel = Math.min(4, state.level + 1) as Level
   const threshold = levels[nextLevel].threshold
   const ready = state.level < 4 && state.reputation >= threshold
   const percent = state.level === 4 ? 100 : Math.min(100, state.reputation / threshold * 100)
+  return `<div class="xp-status${ready ? ' xp-ready' : ''}"><span>Cấp ${state.level} <b>${state.reputation}${state.level < 4 ? '/' + threshold : ''} EXP</b></span>
+      <div class="xp-track" role="progressbar" aria-label="EXP của tiệm" aria-valuemin="0" aria-valuemax="${state.level === 4 ? Math.max(1, state.reputation) : threshold}" aria-valuenow="${state.level === 4 ? state.reputation : Math.min(threshold, state.reputation)}"><i style="width:${percent}%"></i></div>
+      ${ready ? '<small class="xp-unlock">Đủ EXP lên cấp</small>' : ''}
+    </div>
+    ${state.daily ? `<div class="mission-chips" aria-label="Nhiệm vụ hôm nay">${state.daily.missions.map(task => `<button type="button" data-action="missions" class="mission-chip${task.rewarded ? ' complete' : ''}" aria-label="${missionLabels[task.kind].detail}: ${task.progress}/${task.target}, ${task.rewarded ? 'đã nhận thưởng' : 'xem nhiệm vụ'}"><span>${task.rewarded ? '✓' : task.kind === 'orders' ? '▤' : '★'} ${missionLabels[task.kind].short}</span><b>${task.progress}/${task.target}</b></button>`).join('')}</div>` : ''}`
+}
+
+function statusStrip(state: GameState, shop: boolean): string {
   const notice = shiftNotice(state)
   return `<div class="status-strip">
      <span class="status-day">${icon('calendar', 16)} Ngày ${state.day}</span>
@@ -91,11 +115,7 @@ function statusStrip(state: GameState, shop: boolean): string {
   </div>
   <div class="activity-hud">
     ${shop && notice?.id === 'warning' ? `<span class="shift-notice phase-warning" role="status">${icon('bell', 14)} <span data-rush-countdown>${notice.label}</span></span>` : ''}
-    <div class="xp-status${ready ? ' xp-ready' : ''}"><span>Cấp ${state.level} <b>${state.reputation}${state.level < 4 ? '/' + threshold : ''} EXP</b></span>
-      <div class="xp-track" role="progressbar" aria-label="EXP của tiệm" aria-valuemin="0" aria-valuemax="${state.level === 4 ? Math.max(1, state.reputation) : threshold}" aria-valuenow="${state.level === 4 ? state.reputation : Math.min(threshold, state.reputation)}"><i style="width:${percent}%"></i></div>
-      ${ready ? '<small class="xp-unlock">Đủ EXP lên cấp</small>' : ''}
-    </div>
-    ${state.daily ? `<div class="mission-chips" aria-label="Nhiệm vụ hôm nay">${state.daily.missions.map(task => `<button type="button" data-action="missions" class="mission-chip${task.rewarded ? ' complete' : ''}" aria-label="${missionLabels[task.kind].detail}: ${task.progress}/${task.target}, ${task.rewarded ? 'đã nhận thưởng' : 'xem nhiệm vụ'}"><span>${task.rewarded ? '✓' : task.kind === 'orders' ? '▤' : '★'} ${missionLabels[task.kind].short}</span><b>${task.progress}/${task.target}</b></button>`).join('')}</div>` : ''}
+    ${activityProgress(state)}
   </div>`
 }
 
@@ -272,6 +292,7 @@ function orderSlip(customer: Customer, bowl?: Bowl): string {
     <ul class="order-ingredients" aria-label="Nguyên liệu theo đơn">${foodList.map(id => orderIngredient(id, order, bowl)).join('')}</ul>
     <div class="order-notes"><b>Ghi chú</b><span${heatMismatch ? ' class="note-mismatch"' : ''}>${heatLabels[order.heat]}</span>
       ${order.noCilantro ? `<span${bowl?.ingredients.cilantro ? ' class="note-mismatch"' : ''}>Bỏ rau răm</span>` : ''}
+      ${order.extraMango ? '<span>×2 xoài</span>' : ''}
     </div>
     ${customer.special ? `<div class="special-request"><b>★ ${specialChallenges[customer.special].label}</b><span>${specialChallenges[customer.special].detail}</span><small>+${money(specialChallenges[customer.special].cash)} · ${specialChallenges[customer.special].xp} EXP</small></div>` : ''}
   </div>`
@@ -299,8 +320,21 @@ function receiptSummary(guest: Customer, active: boolean, bowl?: Bowl): string {
 function orderDetails(state: GameState): string {
   const active = currentCustomer(state)
   const bowl = state.shift?.bowl
+  const ids = active ? orderIngredientIds(active.order) : []
+  const visible = ids.slice(0, 5)
+  const remainder = ids.slice(5)
+  const missing = active ? remainder.filter(id => ingredientProgress(id, active.order, bowl).missing).length : 0
   return `<section class="order-details" id="order-details" aria-label="Phiếu order đang làm" data-order-id="${active?.id ?? ''}">
-      ${active ? orderSlip(active, bowl) : '<div class="order-slip order-slip-empty"><p class="order-ticket-title">Phiếu order</p></div>'}
+      <div class="compact-order">
+        <div class="compact-order-head"><span>${active ? `#${String(active.id).padStart(3, '0')} · ${profiles[active.profile].name}` : 'Phiếu order'}</span>
+          ${active ? `<button type="button" data-action="order" aria-label="Xem toàn bộ phiếu order của ${profiles[active.profile].name}">${icon('ledger', 14)} Chi tiết</button>` : ''}
+        </div>
+        ${active ? `<div class="compact-order-dish"><strong>${menu[active.order.dish].name.replace(/^Bánh tráng (trộn )?/, '')}</strong><span>${active.servedPortions.length}/${active.order.quantity} bịch · ${money(active.order.price)}</span></div>
+          <ul class="compact-order-recipe" aria-label="Nguyên liệu theo đơn">${visible.map(id => orderIngredient(id, active.order, bowl)).join('')}${remainder.length ? `<li><button type="button" class="recipe-more" data-action="order" aria-label="Xem ${remainder.length} nguyên liệu còn lại, còn thiếu ${missing}">+${remainder.length}<small>${missing ? `Thiếu ${missing}` : '✓ Đủ'}</small></button></li>` : ''}</ul>
+          <div class="compact-order-notes"><span>${heatLabels[active.order.heat]}</span>${active.order.noCilantro ? '<span>Bỏ rau răm</span>' : ''}${active.order.extraMango ? '<span>×2 xoài</span>' : ''}${active.special ? `<span class="compact-special">★ ${specialChallenges[active.special].label}</span>` : ''}</div>`
+          : '<p class="compact-order-empty">Chọn khách để xem món cần làm.</p>'}
+      </div>
+      <div class="desktop-order">${active ? `<button type="button" class="desktop-order-open" data-action="order">${icon('ledger', 15)} Xem phiếu đầy đủ</button>${orderSlip(active, bowl)}` : '<div class="order-slip order-slip-empty"><p class="order-ticket-title">Phiếu order</p></div>'}</div>
       ${active && currentLesson(state)?.action === 'read-order' ? '<button type="button" class="button quiet order-read" data-action="read-order">Đã xem phiếu</button>' : ''}
     </section>`
 }
@@ -341,71 +375,55 @@ function kitchen(state: GameState, options: ScreenOptions): string {
   const bowl = state.shift?.bowl
   const percent = Math.floor(mixProgress(state))
   const next = customer && bowl ? nextKitchenAction(customer.order, bowl, percent) : null
-  const stage = bowl?.pack ? 5 : percent === 100 ? next === 'toppings' ? 3 : bowl?.finalMixed ? 5 : 4 : bowl?.ingredients.rice ? 2 : 1
+  const tab = options.counterTab ?? initialCounterTab(state)
+  const packEnabled = Boolean(bowl?.ingredients.rice && percent === 100 && (bowl.pack || state.inventory.pack))
+  let action = 'mix'
+  let actionId = ''
+  let label = bowl?.mixing ? 'Tạm dừng trộn' : percent ? 'Tiếp tục trộn' : 'Trộn đều tay'
+  let disabled = !customer || !bowl?.ingredients.rice
+  if (bowl?.pack) {
+    action = 'deliver'
+    label = customer && customer.order.quantity > 1 ? `Giao bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : 'Giao món'
+    disabled = !canDeliver(state)
+  } else if (percent === 100) {
+    if (next === 'toppings' && tab !== 'topping' && !bowl?.finalMixed) {
+      action = 'counter-tab'; actionId = 'topping'; label = 'Thêm topping'
+    } else if (!bowl?.finalMixed) {
+      action = 'final-mix'; label = 'Trộn nhẹ'
+    } else {
+      action = 'pack'; actionId = 'bag'; label = 'Đóng bịch + đũa'; disabled = !packEnabled
+    }
+  }
+  const suggested = next === action || action === 'pack' || action === 'deliver' || action === 'counter-tab'
   return `<section class="kitchen" aria-label="Quầy chế biến">
-    <div class="kitchen-steps" aria-label="Tiến trình chế biến">
-      ${['Nền', 'Nêm & trộn', 'Topping', 'Trộn nhẹ', 'Gói'].map((name, index) => `<span class="${index + 1 === stage ? 'current' : index + 1 < stage ? 'done' : ''}">
-        <i>${index + 1 < stage ? icon('check', 10) : index + 1}</i>${name}</span>`).join('')}
-    </div>
     <div class="bowl-area" data-drop-zone>
-      <div class="bowl-caption"><strong>Thau trộn${customer && customer.order.quantity > 1 ? ` · Bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : ''}</strong><span>${bowl?.pack ? 'Đã gói · kèm đũa tre' : 'Bấm hoặc kéo nguyên liệu vào thau'}</span></div>
-      ${next === 'toppings' ? '<span class="topping-cue">Thêm topping ↓</span>' : ''}
+      <div class="bowl-caption"><strong>Thau trộn${customer && customer.order.quantity > 1 ? ` · Bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : ''}</strong><span>${bowl?.pack ? 'Đã gói · kèm đũa tre' : next === 'toppings' ? 'Thêm rau, đạm rồi đến đồ giòn' : 'Chạm hoặc kéo nguyên liệu vào thau'}</span></div>
       ${bowlArt(bowl)}
-      <button type="button" class="icon-button waste-button" data-action="trash" aria-label="Đổ bỏ phần bánh" title="Đổ bỏ phần bánh" ${priceOf(bowl?.ingredients ?? {}) ? '' : 'disabled'}>${icon('trash', 18)}</button>
-    </div>
-    <div class="mix-controls">
-      <button type="button" class="button mix-button${bowl?.mixing ? ' active' : ''}${next === 'mix' ? ' suggested-action' : ''}" data-action="mix" ${!bowl?.ingredients.rice || percent === 100 ? 'disabled' : ''}>
-        ${icon(percent === 100 ? 'check' : 'mix', 17)} ${percent === 100 ? 'Đã trộn đều' : bowl?.mixing ? 'Đang trộn…' : 'Trộn đều tay'}
-      </button>
-      <div class="mix-meter" role="progressbar" aria-label="Tiến độ trộn lần đầu" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">
-        <span><i data-mix-fill style="width:${percent}%"></i></span><b data-mix-percent>${percent}%</b>
-      </div>
-      <button type="button" class="button quiet final-mix-button${next === 'final-mix' ? ' suggested-action' : ''}" data-action="final-mix" ${percent < 100 || bowl?.finalMixed || bowl?.pack ? 'disabled' : ''}>${icon(bowl?.finalMixed ? 'check' : 'mix', 16)} Trộn nhẹ</button>
+      <button type="button" class="icon-button waste-button" data-action="trash" aria-label="Đổ bỏ phần bánh" ${priceOf(bowl?.ingredients ?? {}) ? '' : 'disabled'}>${icon('trash', 18)}</button>
+      <div class="mix-meter" role="progressbar" aria-label="Tiến độ trộn lần đầu" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><span><i data-mix-fill style="width:${percent}%"></i></span><b data-mix-percent>${percent}%</b></div>
     </div>
     ${ingredientStation(state, options, next === 'toppings', customer)}
-    <div class="handoff-controls">
-      <div class="pack-controls" role="group" aria-label="Đóng gói">
-        <button type="button" class="button quiet ${bowl?.pack === 'bag' ? 'packed' : ''}" data-action="pack" data-id="bag"
-          aria-pressed="${bowl?.pack === 'bag'}" ${percent < 100 || (!bowl?.pack && !state.inventory.pack) ? 'disabled' : ''}>Bịch nilon</button>
-        ${state.level >= 3 ? `<button type="button" class="button quiet ${bowl?.pack === 'box' ? 'packed' : ''}" data-action="pack" data-id="box"
-          aria-pressed="${bowl?.pack === 'box'}" ${percent < 100 || (!bowl?.pack && !state.inventory.pack) ? 'disabled' : ''}>Hộp giấy</button>` : ''}
-        <span class="pack-stock">${state.inventory.pack} bộ gói</span>
-      </div>
-      <button type="button" class="button primary serve-button" data-action="deliver" ${canDeliver(state) ? '' : 'disabled'}>
-        ${icon('check', 19)} ${customer && customer.order.quantity > 1 ? `Giao bịch ${customer.servedPortions.length + 1}/${customer.order.quantity}` : 'Giao món'} ${icon('arrow', 17)}
-      </button>
-    </div>
+    <button type="button" class="button counter-main-action${suggested ? ' suggested-action' : ''}" data-action="${action}" ${actionId ? `data-id="${actionId}"` : ''} ${disabled ? 'disabled' : ''}>
+      ${icon(action === 'deliver' ? 'check' : action === 'pack' ? 'basket' : 'mix', 20)} <span class="counter-action-label">${label}${action === 'pack' ? `<small class="counter-pack-count">Còn ${state.inventory.pack} bộ</small>` : ''}</span>${icon('arrow', 18)}
+    </button>
   </section>`
 }
 
-const trayGroups = {
-  base: ['rice', 'kumquat', 'shrimpSalt', 'chili', 'oil', 'tamarind', 'blackSauce'],
-  vegetables: ['mango', 'cilantro'],
-  crunch: ['peanut', 'shallot'],
-  protein: ['egg', 'redBeef', 'blackBeef', 'chicken', 'squid'],
-} as const satisfies Record<string, readonly IngredientId[]>
-
 function ingredientStation(state: GameState, options: ScreenOptions, suggestToppings: boolean, customer?: Customer): string {
-  const filledSlots = (ids: readonly IngredientId[]) => ids.filter(id => ingredients[id].level <= state.level)
-    .map(id => tray(state, id, customer)).join('')
-  const crunchy = filledSlots(trayGroups.crunch)
-  const protein = filledSlots(trayGroups.protein)
-  return `<section class="ingredient-station" aria-label="Khay nguyên liệu">
-    <section class="ingredient-bank" aria-labelledby="seasoning-bank">
-      <h3 id="seasoning-bank">Bánh tráng &amp; gia vị</h3>
-      <div class="ingredient-grid">${filledSlots(trayGroups.base)}</div>
-      ${options.heatOpen ? `<div class="heat-options" role="group" aria-label="Chọn mức cay">
-        ${heatLabels.map((label, index) => `<button type="button" data-action="heat" data-id="${index}" ${index > 0 && state.inventory.chili === 0 ? 'disabled' : ''}>${label}</button>`).join('')}
-      </div>` : ''}
-    </section>
-    <section class="ingredient-bank${suggestToppings ? ' suggested-bank' : ''}" aria-labelledby="topping-bank">
-      <h3 id="topping-bank">Rau &amp; topping</h3>
-      <div class="topping-groups">
-        <div class="topping-group" role="group" aria-label="Rau củ"><h4>Rau củ</h4><div class="ingredient-grid paired">${filledSlots(trayGroups.vegetables)}</div></div>
-        ${crunchy ? `<div class="topping-group" role="group" aria-label="Đồ giòn"><h4>Đồ giòn</h4><div class="ingredient-grid paired">${crunchy}</div></div>` : ''}
-      </div>
-      ${protein ? `<div class="topping-group protein-group" role="group" aria-label="Đạm"><h4>Đạm</h4><div class="ingredient-grid">${protein}</div></div>` : ''}
-    </section>
+  const tab = options.counterTab ?? initialCounterTab(state)
+  const page = counterPage(state, tab, options.trayPages?.[tab])
+  const suggestedTab = suggestToppings ? 'topping' : null
+  const otherPage = (page.index + 1) % page.count
+  const otherNeeds = page.all.slice(otherPage * trayPageSize, (otherPage + 1) * trayPageSize).some(id => missingIngredient(state, id))
+  return `<section class="ingredient-station${suggestToppings ? ' suggested-bank' : ''}" aria-label="Khay nguyên liệu">
+    <div class="counter-tabbar"><div class="counter-tabs" role="tablist" aria-label="Nhóm nguyên liệu">${(Object.keys(counterTabs) as CounterTab[]).map(key => {
+      const missing = counterItems(state, key).some(id => missingIngredient(state, id))
+      return `<button type="button" role="tab" id="tab-${key}" aria-controls="counter-trays" aria-selected="${tab === key}" data-action="counter-tab" data-id="${key}" class="${suggestedTab === key ? 'suggested-tab' : ''}">${counterTabs[key]}${missing ? '<span class="tab-needed" aria-label="Còn thiếu">•</span>' : ''}</button>`
+    }).join('')}</div>${page.count > 1 ? `<div class="tray-pagination"><button type="button" data-action="tray-page" data-id="${otherPage}" aria-label="Trang ${page.index + 1}/${page.count}. Chuyển sang trang ${otherPage + 1}${otherNeeds ? ', còn nguyên liệu cần dùng' : ''}">${page.index + 1}/${page.count} ${icon('arrow', 13)}${otherNeeds ? '<span aria-hidden="true">•</span>' : ''}</button></div>` : ''}</div>
+    <div class="counter-tray-panel" role="tabpanel" id="counter-trays" aria-labelledby="tab-${tab}">
+      <div class="counter-trays">${page.items.map(id => tray(state, id, customer)).join('')}</div>
+    </div>
+    ${options.heatOpen ? `<div class="heat-options" role="group" aria-label="Chọn mức cay">${heatLabels.map((label, index) => `<button type="button" data-action="heat" data-id="${index}" ${index > 0 && state.inventory.chili === 0 ? 'disabled' : ''}>${label}</button>`).join('')}</div>` : ''}
   </section>`
 }
 
@@ -425,13 +443,8 @@ function tray(state: GameState, id: IngredientId, customer?: Customer): string {
 
 function shopScreen(state: GameState, options: ScreenOptions): string {
   return `<main class="game-screen shop-screen">
-    ${statusStrip(state, true)}
     <section class="shop-front" aria-label="Quầy đón khách">
-      <div class="queue-heading"><h1>Quầy bán hàng</h1><div class="heading-buttons">
-        ${shiftNotice(state)?.id === 'special' ? `<span class="special-arrival-alert" role="status" aria-label="Khách mời sắp ghé" title="Khách mời sắp ghé">${icon('star', 18)}</span>` : ''}
-        <button type="button" class="button quiet close-shift" data-action="close-shop">Kết thúc sớm</button>
-        ${labelButton('help', 'Hướng dẫn nhanh', 'help')}
-      </div></div>
+      <h1 class="visually-hidden">Quầy bán hàng</h1>
       ${queueScene(state, options)}
     </section>
     ${orderBoard(state)}
@@ -529,17 +542,29 @@ function guide(state: GameState | null): string {
   const duration = !state || getShiftRules(state).durationMs === 105000 ? 'Ca tối đa 1:45; ngừng đón khách ở giây 85 và tự chốt khi giao hết hàng chờ.' : 'Ca đang chơi tiếp tục dài 4 phút; ngày tiếp theo chuyển sang ca tối đa 1 phút 45 giây.'
   return `<ol class="guide-list">
     <li><div><strong>Đi chợ và chọn menu</strong><p>Nhập bánh tráng, muối tôm, tắc và bộ đóng gói để bán món muối tắc. Mở Menu hôm nay để đổi món hoặc chỉnh giá.</p></div></li>
-    <li><div><strong>Đọc đơn trước khi làm</strong><p>Chọn một khách rồi xem phiếu cạnh khu chế biến. So hình nguyên liệu trên phiếu với các khay. Chạm hoặc kéo nguyên liệu lên thau.</p></div></li>
+    <li><div><strong>Đọc đơn trước khi làm</strong><p>Chọn khách rồi xem phiếu gọn. Bấm Chi tiết để xem toàn bộ nguyên liệu và yêu cầu. So hình trên phiếu với khay; chạm hoặc kéo lên thau.</p></div></li>
     <li><div><strong>Nêm rồi trộn đến 100%</strong><p>Cho bánh tráng vào trước, thêm tắc rồi các gia vị theo đơn. Bấm Trộn đều tay và đợi thanh chạy hết.</p></div></li>
-    <li><div><strong>Thêm topping, trộn nhẹ và giao</strong><p>Thêm rau, topping rồi mới rắc đậu phộng hoặc hành phi. Trộn nhẹ, chọn bao bì kèm đũa và bấm Giao món.</p></div></li>
-    <li><div><strong>Xem sổ cuối ngày</strong><p>${duration} Có thể Kết thúc sớm ở quầy. Chi phí ngày vẫn giữ nguyên. Hoàn thành nhiệm vụ, trả lời đánh giá để tích EXP và mở cấp vào ngày kế tiếp.</p></div></li>
+    <li><div><strong>Thêm topping, trộn nhẹ và giao</strong><p>Đổi tab Nêm / Topping để lấy nguyên liệu. Chấm bên tab hoặc trang khay báo nguyên liệu còn thiếu. Thêm rau, đạm rồi mới đến đồ giòn; trộn nhẹ, bấm Đóng bịch + đũa rồi giao món. Số bộ gói còn lại nằm ngay trên nút.</p></div></li>
+    <li><div><strong>Xem sổ cuối ngày</strong><p>${duration} Mở Menu ca bán để xem EXP, nhiệm vụ hoặc Kết thúc sớm. Chi phí ngày vẫn giữ nguyên. Hoàn thành nhiệm vụ, trả lời đánh giá để tích EXP và mở cấp vào ngày kế tiếp.</p></div></li>
   </ol>`
 }
 
 export function dialogContent(state: GameState | null, options: ScreenOptions): string {
   if (!options.modal) return ''
-  const titles = { help: 'Hướng dẫn nhanh', reviews: 'Đánh giá của khách', reset: 'Mở một tiệm mới?', ledger: 'Sổ thu chi', 'close-shop': 'Kết thúc ngày sớm?', missions: 'Nhiệm vụ hôm nay' }
+  const titles = { help: 'Hướng dẫn nhanh', reviews: 'Đánh giá của khách', reset: 'Mở một tiệm mới?', ledger: 'Sổ thu chi', 'close-shop': 'Kết thúc ngày sớm?', missions: 'Nhiệm vụ hôm nay', 'shop-menu': 'Tiệm nhỏ · Tạm dừng', order: 'Phiếu order · Tạm dừng' }
+  const active = state ? currentCustomer(state) : undefined
   const content = options.modal === 'help' ? guide(state) : options.modal === 'reviews' ? reviewList(state, options)
+    : options.modal === 'order' ? `${active ? orderSlip(active, state?.shift?.bowl) : '<p>Chưa có khách đang chọn.</p>'}<button type="button" class="button primary" data-action="modal-close">Quay lại thau</button>`
+    : options.modal === 'shop-menu' && state ? `${statusStrip(state, true)}
+      <div class="counter-menu-list">
+        <button type="button" class="button quiet" data-action="missions">${icon('ledger', 19)} Nhiệm vụ hôm nay ${icon('arrow', 16)}</button>
+        <button type="button" class="button quiet" data-action="reviews">${icon('star', 19)} Đánh giá · ${starsLabel(state.reviews.reduce((sum, review) => sum + review.stars, 0), state.reviews.length)} (${state.reviews.length}) ${icon('arrow', 16)}</button>
+        <button type="button" class="button quiet" data-action="mute">${icon(state.muted ? 'muted' : 'volume', 19)} Âm thanh · ${state.muted ? 'Tắt' : 'Bật'}</button>
+        <button type="button" class="button quiet" data-action="help">${icon('help', 19)} Hướng dẫn nhanh</button>
+        <button type="button" class="button quiet" data-action="close-shop">${icon('clock', 19)} Kết thúc sớm</button>
+        <button type="button" class="button quiet" data-action="home">${icon('storefront', 19)} Màn hình chính</button>
+        <button type="button" class="button primary" data-action="modal-close">Tiếp tục bán hàng ${icon('arrow', 18)}</button>
+      </div>`
     : options.modal === 'missions' && state ? `${missionDetails(state.daily?.missions ?? [])}<p class="mission-help">Nhận đủ mọi bịch của một khách mới tính một đơn. Thưởng tự cộng vào két. EXP mở cấp quán vào ngày kế tiếp.</p>`
     : options.modal === 'ledger' && state ? reportBody(state, options)
     : options.modal === 'close-shop' && state ? `<p class="reset-copy">Tiệm sẽ đóng lúc ${shopTime(state)} và chốt sổ ngay. Chi phí trong ngày vẫn được tính.</p>
@@ -551,7 +576,7 @@ export function dialogContent(state: GameState | null, options: ScreenOptions): 
       <button type="button" class="button quiet" data-action="modal-close">Giữ tiệm hiện tại</button>
       <button type="button" class="button primary" data-action="reset-confirm">Chơi mới</button>
     </div>`
-  return `<dialog class="sheet" aria-labelledby="dialog-title">
+  return `<dialog class="sheet${state?.phase === 'shop' ? ' counter-sheet' : ''}${options.modal === 'order' ? ' order-dialog' : ''}" aria-labelledby="dialog-title">
     <header class="sheet-header"><h2 id="dialog-title">${titles[options.modal]}</h2>${labelButton('modal-close', 'Đóng bảng', 'close')}</header>
     <div class="sheet-body">${content}</div>
   </dialog>`
@@ -561,7 +586,7 @@ export function renderApp(state: GameState | null, options: ScreenOptions): stri
   const topbar = header(state, options.home, options.initialMute)
   const warning = options.warning ? `<div class="save-warning" role="status">${escape(options.warning)}</div>` : ''
   if (!options.home && state?.phase === 'shop') {
-    return `<div class="shop-layout">
+    return `<div class="shop-layout compact-layout">
       ${topbar}
       <div class="game-frame">${warning}${shopScreen(state, options)}</div>
     </div>`
@@ -579,6 +604,8 @@ export function updateClocks(root: HTMLElement, state: GameState): void {
   const countdown = root.querySelector('[data-rush-countdown]')
   const notice = shiftNotice(state)
   if (countdown && notice?.id === 'warning' && countdown.textContent !== notice.label) countdown.textContent = notice.label
+  const compactNotice = root.querySelector('[data-counter-notice]')
+  if (compactNotice && notice && compactNotice.textContent !== notice.label) compactNotice.textContent = notice.label
   const percent = Math.floor(mixProgress(state))
   const fill = root.querySelector<HTMLElement>('[data-mix-fill]')
   if (fill) {

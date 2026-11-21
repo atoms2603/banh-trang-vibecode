@@ -53,11 +53,19 @@ Khi trộn đều tay, hai bản `sound/sfx/paper-rice-mixed-1.mp3` và `paper-r
 
 ## Ca đầu tiên
 
+Màn bán hàng dùng **Quầy gọn**: điện thoại dọc xếp khách, phiếu, thau và khay trên cùng một màn; quay ngang đưa khách/phiếu sang trái và khu chế biến sang phải. iPad/desktop có cảnh khách trải ngang, khay lớn và cấp/EXP/nhiệm vụ hiện trên thanh thông tin. iPad dọc đặt phiếu cạnh thau, khay bên dưới chiếm trọn chiều ngang. iPad ngang và desktop có thêm thanh gỗ liệt kê phiếu chờ. Xoay máy giữ nguyên đơn, thau và nhóm nguyên liệu đang chọn.
+
+Cảnh khách cố định 160 px, khu thau 150 px trên iPad/desktop; điện thoại dùng cảnh tối đa 160 px, thau tối đa 140 px và thu gọn khi màn thấp. Không dồn phần chiều cao dư vào cảnh hoặc thau. Vùng phiếu giữ nguyên chiều cao cả khi trống; nội dung dài cuộn bên trong. Khay có chiều cao cố định theo từng kiểu màn hình, không kéo dài khi chưa có phiếu hoặc khi đổi món. Gánh và chân khách cùng nằm trên vỉa hè. Khách xếp sát nhau từ cạnh gánh, không giãn đều khi hàng ít người. Màn ngang dành thêm chiều rộng cho cảnh để gánh và cả hàng khách nằm cùng một hàng.
+
+Chuyển tab **Nêm / Topping** để lấy đồ. Mỗi trang có tối đa 8 khay; nút `1/2 →` chuyển trang khi mở khóa nhiều topping. Chấm bên tab/trang báo còn nguyên liệu cần dùng. Khay đủ khẩu phần tắt viền và hình tương ứng trên phiếu được đánh dấu. Sau khi trộn nhẹ, bấm trực tiếp **Đóng bịch + đũa**; số bộ gói còn lại hiển thị ngay trên nút. Game chỉ dùng bịch nilon, mỗi phần trừ một bộ gói. Bản lưu cũ đã dùng hộp giấy tự đổi thành bịch và giữ nguyên phần đã đóng gói, không trừ kho lần nữa.
+
+Bấm **Chi tiết** trên phiếu để xem toàn bộ nguyên liệu, số bịch, mức cay và yêu cầu đặc biệt. Bảng mở từ dưới khi dọc, từ bên phải khi ngang; đồng hồ, kiên nhẫn và trộn cùng tạm dừng khi bảng mở. Menu ở góc trên có EXP, nhiệm vụ, đánh giá, âm thanh và kết thúc sớm. Ở màn hình rộng, cấp, thanh EXP và hai nhiệm vụ còn hiện trực tiếp trên thanh thông tin. Màn hình rất thấp chỉ cuộn vùng khay; nút chính vẫn ở trong khung. Thanh địa chỉ trình duyệt và vùng tai thỏ được tính vào chiều cao hiển thị.
+
 Nhập bánh tráng, muối tôm, tắc và bộ đóng gói. Sang **Menu hôm nay** để chỉnh giá hoặc đổi món. Khi mở cửa, chọn khách rồi bấm hoặc kéo nguyên liệu vào thau. Với món muối tắc, thêm bánh tráng, tắc và muối tôm. Bấm **Trộn đều tay** đến 100%, bấm **Trộn nhẹ**, chọn bịch và **Giao món**. Mỗi ca mới kéo dài tối đa **1 phút 45 giây** (105 giây).
 
 Két nhận tiền ngay khi giao từng bịch. Khi chốt ngày, game trừ phí vận hành, lương nếu có và thuế 3% tổng thu nhập (bán món + tip/thưởng). Báo cáo tách hai nguồn thu, ghi tiền nhập hàng khi mua và giá vốn khi sử dụng hoặc hủy. Đơn nhiều bịch chỉ tính một đơn hoàn thành và một đánh giá khi khách nhận đủ.
 
-Ngày đầu, game tô sáng từng thao tác cho đến khi bạn giao phần bánh đầu tiên. Đồng hồ và thanh kiên nhẫn tạm dừng trong phần thực hành. Sau đó, giờ đóng cửa dự kiến hiển thị trên quầy và bạn có thể bấm **Kết thúc sớm** để chốt sổ ngay.
+Ngày đầu, game tô sáng từng thao tác cho đến khi bạn giao phần bánh đầu tiên. Đồng hồ và thanh kiên nhẫn tạm dừng trong phần thực hành. Sau đó, giờ đóng cửa dự kiến hiển thị trên quầy và bạn có thể mở menu rồi bấm **Kết thúc sớm** để chốt sổ ngay.
 
 ## Nhịp ca, khách quen và nhiệm vụ
 
@@ -82,7 +90,7 @@ Mỗi ca từ ngày 2 lên lịch một lượt đáng nhớ ở giây 60, báo 
 
 Hàng đầy thì lượt đáng nhớ chờ chỗ trống trước giây 85. Nếu mất nguyên liệu, game thử chuyển sang truyện khác hoặc đơn hai bịch; nếu vẫn không thể phục vụ, bỏ lượt ghé mà không phạt. Kho phải đủ toàn bộ số bịch, kể cả yêu cầu thêm xoài.
 
-Hai ô nhiệm vụ cạnh trạng thái ca theo dõi số đơn và chất lượng. Ngày 1 cần 5 đơn và 2 đơn 5 sao. Từ ngày 2, chỉ tiêu số đơn theo cấp là 6/7/8/9; chất lượng luân phiên 2 đơn 5 sao, 3 đơn từ 3 sao còn ít nhất nửa kiên nhẫn, hoặc 3 đơn từ 4 sao. Bấm để xem điều kiện và thưởng. Thưởng tự cộng ngay, chỉ một lần. EXP dùng chung điểm danh tiếng từ đánh giá và phản hồi; các mốc 40, 120, 240 EXP mở cấp vào ngày kế tiếp. Tổng kết có số đơn đủ, số bịch đã bán, nhiệm vụ và EXP kiếm được; tuần là các kỳ 7 ngày trong game.
+Các ô nhiệm vụ trong Menu ca bán theo dõi số đơn và chất lượng. Ngày 1 cần 5 đơn và 2 đơn 5 sao. Từ ngày 2, chỉ tiêu số đơn theo cấp là 6/7/8/9; chất lượng luân phiên 2 đơn 5 sao, 3 đơn từ 3 sao còn ít nhất nửa kiên nhẫn, hoặc 3 đơn từ 4 sao. Bấm để xem điều kiện và thưởng. Thưởng tự cộng ngay, chỉ một lần. EXP dùng chung điểm danh tiếng từ đánh giá và phản hồi; các mốc 40, 120, 240 EXP mở cấp vào ngày kế tiếp. Tổng kết có số đơn đủ, số bịch đã bán, nhiệm vụ và EXP kiếm được; tuần là các kỳ 7 ngày trong game.
 
 ## Bản lưu và cân bằng
 

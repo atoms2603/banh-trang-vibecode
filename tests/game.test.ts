@@ -238,7 +238,7 @@ test('purchases, use, waste, spoilage, tax and cash reconcile across days and we
   assert.equal(week.cashDelta, state.cash - 150000)
 })
 
-test('reputation unlocks four levels, staff and the alternate packaging', () => {
+test('reputation unlocks four levels and staff, and re-packing does not spend another set', () => {
   const state = newGame()
   for (const [quantity, nextLevel, cost] of [[10, 2, 15000], [20, 3, 25000], [20, 3, 35000], [10, 4, 35000]]) {
     // Isolate the original review-based unlock path, as in an upgraded open shift.
@@ -269,7 +269,7 @@ test('reputation unlocks four levels, staff and the alternate packaging', () => 
   mix(state)
   assert.equal(finishMix(state).ok, true)
   const packs = state.inventory.pack
-  assert.equal(packBowl(state, 'box').ok, true)
+  assert.equal(packBowl(state, 'bag').ok, true)
   assert.equal(packBowl(state, 'bag').ok, true)
   assert.equal(state.inventory.pack, packs - 1)
   deliver(state)
@@ -469,14 +469,14 @@ test('the selected order’s tray and mixing highlights follow the bowl’s prog
   start(state)
   const random = [.6, 0, 0]
   currentCustomer(state)!.order = makeOrder(state, 'classic', () => random.shift()!)
-  const render = () => renderApp(state, {
+  const render = (counterTab?: 'seasoning' | 'topping') => renderApp(state, {
     home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
-    modal: null,
+    modal: null, counterTab,
     heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
   })
   const cue = (action: string) => new RegExp('suggested-action" data-action="' + action + '"')
   assert.match(render(), /class="tray rice needed"/)
-  assert.match(render(), /class="tray mango needed"/)
+  assert.match(render('topping'), /class="tray mango needed"/)
   assert.doesNotMatch(render(), /class="tray cilantro needed"/)
   assert.doesNotMatch(render(), cue('mix'))
 
@@ -488,7 +488,7 @@ test('the selected order’s tray and mixing highlights follow the bowl’s prog
   assert.match(render(), cue('mix'))
   mix(state)
   assert.match(render(), /suggested-bank/)
-  assert.match(render(), /Thêm topping ↓/)
+  assert.match(render(), /Thêm rau, đạm rồi đến đồ giòn/)
   assert.doesNotMatch(render(), cue('final-mix'))
 
   gather(state, ['mango'])

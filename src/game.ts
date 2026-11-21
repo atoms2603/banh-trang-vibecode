@@ -179,11 +179,11 @@ export function finishMix(state: GameState): Result {
   return success('Trộn nhẹ xong. Đóng gói cho khách nào!')
 }
 
-export function packBowl(state: GameState, type: Packaging): Result {
+export function packBowl(state: GameState, type: Packaging = 'bag'): Result {
   const bowl = state.shift?.bowl
   if (!bowl?.ingredients.rice || bowl.mixing) return problem('Chuẩn bị bánh trong thau trước khi đóng gói.')
   if (mixProgress(state) < 100) return problem('Trộn lần đầu đến 100% trước khi đóng gói.')
-  if (type === 'box' && state.level < 3) return problem('Hộp giấy mở khóa ở cấp 3.')
+  if (type !== 'bag') return problem('Bao bì không hợp lệ.')
   if (bowl.pack) {
     bowl.pack = type
     return success()
@@ -192,7 +192,7 @@ export function packBowl(state: GameState, type: Packaging): Result {
   bowl.pack = type
   bowl.ingredients.pack = 1
   state.inventory.pack--
-  return success(type === 'bag' ? 'Đã đóng bịch và kèm đũa tre.' : 'Đã đóng hộp và kèm đũa tre.')
+  return success('Đã đóng bịch và kèm đũa tre.')
 }
 
 export function trashBowl(state: GameState): Result {
