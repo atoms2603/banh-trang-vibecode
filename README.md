@@ -39,6 +39,14 @@ pnpm preview
 
 `dist/` chứa bản tĩnh để phục vụ qua HTTP. Font Nunito và Quicksand dùng giấy phép OFL trong `public/licenses/`.
 
+## Icon trình duyệt và shortcut
+
+Biểu tượng là gánh bánh tráng hai thúng tre với dù sọc hồng kem, cùng kiểu minh họa với gánh trong game.
+
+Favicon nằm trong `public/favicon.ico` và các PNG 16/32 px. `public/apple-touch-icon.png` (180 px) dùng cho màn hình chính iPhone/iPad. `public/site.webmanifest` khai báo tên tiệm, icon 192/512 px và bản maskable có lề an toàn cho Android. Icon PNG 1024 px để sử dụng lại nằm tại `public/icons/icon-1024.png`; ảnh gốc và prompt imagegen lưu trong `artwork/app-icon/`.
+
+Để tạo shortcut, mở game bằng trình duyệt rồi chọn **Thêm vào màn hình chính / Cài đặt ứng dụng / Tạo lối tắt**, tùy thiết bị và trình duyệt. Các đường dẫn icon và manifest là đường dẫn tương đối để hoạt động cả khi host dưới thư mục GitHub Pages. Shortcut mở game từ web và vẫn cần kết nối để tải tài nguyên.
+
 Nhạc nền dùng `sound/bgm/Cozy Game Groove.mp3`, phát lặp từ lúc mở trang và dùng chung nút bật/tắt âm thanh với hiệu ứng. Nếu trình duyệt chặn tự phát, nhạc bắt đầu khi người chơi chạm hoặc nhấn phím lần đầu. Chuyển sang tab khác sẽ tạm dừng nhạc; trở lại tiếp tục từ vị trí cũ, theo lựa chọn bật/tắt đã lưu.
 
 Khi trộn đều tay, hai bản `sound/sfx/paper-rice-mixed-1.mp3` và `paper-rice-mixed-2.mp3` phát luân phiên, không chồng tiếng. SFX dừng ngay khi trộn đạt 100%, tạm dừng trộn, tắt tiếng, mở bảng tạm dừng hoặc rời màn bán hàng.
