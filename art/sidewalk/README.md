@@ -11,6 +11,6 @@ Art source: `host_image`, generated with the built-in ImageGen tool using the ap
 
 `prepare.py` packages the original PNGs with Pillow, preserving real alpha and limiting the combined runtime payload to 300 KB. `assets.json` records dimensions, output hashes and provenance. Actual runtime payload: 227,502 bytes.
 
-The background repeats horizontally at a uniform scale. The gánh preserves its aspect ratio and anchors its base to the same ground line as customer feet. Draw order: sidewalk, gánh, customer queue, selected customer's dialogue, departure animation. Scene height remains 154–190 CSS pixels; the gánh reserves 88–210 pixels on the left and the queue supports up to four 44px-or-larger controls. Existing game state owns ordering and selection; this backdrop adds no map physics or navigation system.
+The background repeats horizontally at a uniform scale. The gánh preserves its aspect ratio and anchors its base to the same ground line as customer feet. The sidewalk, gánh and queue scroll together horizontally, with space for each waiting customer. Existing game state owns ordering and selection.
 
 Customers retain their existing IDs, patience, dialogue, order selection and tutorial controls. Browser checks cover 0–4 customers and narrow/tablet/desktop viewports. Original character art remains native SVG, adjusted to face the gánh. Still art only; no video or looping background was generated.

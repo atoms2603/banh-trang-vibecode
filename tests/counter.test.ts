@@ -89,7 +89,7 @@ test('the direct bag button shows stock, disables when empty, and old packed box
   assert.equal(deliver(resumed).ok, true)
 })
 
-test('compact receipt preserves every request in the paused detail sheet, including hidden ingredients', () => {
+test('compact receipt shows the entire recipe and the paused detail sheet preserves every request', () => {
   const state = stocked()
   const customer = currentCustomer(state)!
   customer.order = makeOrder(state, 'beef', () => .65)
@@ -99,7 +99,11 @@ test('compact receipt preserves every request in the paused detail sheet, includ
   customer.order.quantity = 3
   customer.special = 'crispy'
   const html = renderApp(state, { ...options, counterTab: 'topping' })
-  assert.match(html, /recipe-more/)
+  const recipe = html.match(/<ul class="compact-order-recipe"[^>]*>(.*?)<\/ul>/s)?.[1] ?? ''
+  assert.deepEqual([...recipe.matchAll(/data-action="order-ingredient" data-id="([^"]+)"/g)].map(match => match[1]),
+    ingredientIds.filter(id => id !== 'pack' && customer.order.recipe[id]))
+  assert.match(recipe, /×2/)
+  assert.doesNotMatch(recipe, /recipe-more/)
   assert.match(html, /còn nguyên liệu cần dùng/)
   const details = dialogContent(state, { ...options, modal: 'order' })
   assert.match(details, /Tạm dừng/)

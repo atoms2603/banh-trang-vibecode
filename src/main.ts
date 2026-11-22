@@ -55,10 +55,12 @@ let lastSave = 0
 let flashTimer = 0
 let departureTimer = 0
 let drag: { pointerId: number; id: IngredientId; x: number; y: number; ghost: HTMLElement | null } | null = null
+let queueDrag: { pointerId: number; x: number; scrollLeft: number; moved: boolean } | null = null
 let suppressClickUntil = 0
 let mixHold: { pointerId: number; timer: number } | null = null
 let suppressMixClickUntil = 0
 let deferredRender = false
+let closing = false
 let modalTrigger: { action?: string; id?: string } | null = null
 let tutorialTarget: HTMLElement | null = null
 let tutorialKey = ''
@@ -185,11 +187,13 @@ function positionCustomerSpeech(): void {
   // Keep the bubble outside the scene's clipped artwork and entrance animations.
   if (speech.parentElement !== app) app.append(speech)
   const anchor = sprite.getBoundingClientRect()
-  speech.hidden = Boolean(options.modal) || anchor.bottom <= 0 || anchor.top >= window.innerHeight
+  const viewport = screen.querySelector('.queue-viewport')!.getBoundingClientRect()
+  const center = anchor.left + anchor.width / 2
+  speech.hidden = Boolean(options.modal) || center < viewport.left || center > viewport.right
+    || anchor.bottom <= 0 || anchor.top >= window.innerHeight
   if (speech.hidden) return
   const { width, height } = speech.getBoundingClientRect()
-  const center = anchor.left + anchor.width / 2
-  const left = Math.max(8, Math.min(center - width / 2, window.innerWidth - width - 8))
+  const left = Math.max(viewport.left + 6, Math.min(center - width / 2, viewport.right - width - 6))
   const above = anchor.top >= height + 16
   speech.style.left = left + 'px'
   speech.style.top = (above ? anchor.top - height - 8 : Math.min(anchor.bottom + 8, window.innerHeight - height - 8)) + 'px'
@@ -200,7 +204,21 @@ function positionCustomerSpeech(): void {
   }
 }
 
+function updateQueueControls(viewport: HTMLElement): void {
+  const limit = viewport.scrollWidth - viewport.clientWidth
+  const controls = viewport.parentElement!.querySelector<HTMLElement>('.queue-controls')!
+  controls.hidden = limit <= 1
+  viewport.toggleAttribute('data-scrollable', !controls.hidden)
+  if (controls.hidden) viewport.removeAttribute('tabindex')
+  else viewport.tabIndex = 0
+  controls.querySelector('[data-id="left"]')?.setAttribute('aria-disabled', String(viewport.scrollLeft <= 1))
+  controls.querySelector('[data-id="right"]')?.setAttribute('aria-disabled', String(viewport.scrollLeft >= limit - 1))
+}
+
 function updateLayout(): void {
+  if (closing) return
+  const viewport = screen.querySelector<HTMLElement>('.queue-viewport')
+  if (viewport) updateQueueControls(viewport)
   positionCustomerSpeech()
   positionTutorial()
 }
@@ -213,6 +231,7 @@ function resizeLayout(): void {
 }
 
 function renderScreen(move = false): void {
+  if (closing) return
   syncMixingSound()
   if (drag?.ghost && !move) {
     deferredRender = true
@@ -237,6 +256,9 @@ function renderScreen(move = false): void {
     customer => Number(customer.dataset.id)))
   const orderScroll = screen.querySelector<HTMLElement>('.order-sheet')?.scrollTop ?? 0
   const orderScrollLeft = screen.querySelector<HTMLElement>('.order-sheet')?.scrollLeft ?? 0
+  const previousViewport = screen.querySelector<HTMLElement>('.queue-viewport')
+  const queueScroll = previousViewport?.scrollLeft ?? 0
+  const queueFocused = previousViewport === document.activeElement
   const shopScroll = screen.querySelector<HTMLElement>('.shop-screen')?.scrollTop ?? 0
   const previousDetails = screen.querySelector<HTMLElement>('.order-details')
   const detailScroll = previousDetails?.scrollTop ?? 0
@@ -257,6 +279,8 @@ function renderScreen(move = false): void {
   }
   const shop = screen.querySelector<HTMLElement>('.shop-screen')
   if (shop && !move) shop.scrollTop = shopScroll
+  const viewport = screen.querySelector<HTMLElement>('.queue-viewport')
+  if (viewport && !move) viewport.scrollLeft = queueScroll
   const details = screen.querySelector<HTMLElement>('.order-details')
   if (details && details.dataset.orderId === previousDetails?.dataset.orderId) details.scrollTop = detailScroll
   // Phones scroll the document, not .shop-screen. Restore it after replacing
@@ -264,6 +288,7 @@ function renderScreen(move = false): void {
   if (!move) window.scrollTo({ ...pageScroll, behavior: 'instant' })
   renderTutorial()
   updateLayout()
+  if (!move && queueFocused) viewport?.focus({ preventScroll: true })
 }
 
 function renderModal(): void {
@@ -391,10 +416,52 @@ function showReport(game: GameState): void {
   renderScreen(true)
 }
 
+function showClosingNotice(game: GameState): void {
+  closing = true
+  queueDrag = null
+  window.clearTimeout(flashTimer)
+  window.clearTimeout(departureTimer)
+  if (mixHold) window.clearTimeout(mixHold.timer)
+  mixHold = null
+  suppressMixClickUntil = 0
+  drag?.ghost?.remove()
+  drag = null
+  deferredRender = false
+  screen.querySelector('.drop-ready')?.classList.remove('drop-ready')
+  toast.classList.remove('visible')
+  for (const animation of toast.getAnimations()) animation.cancel()
+  screen.inert = true
+  for (const animation of app.getAnimations({ subtree: true })) animation.pause()
+  const notice = document.createElement('div')
+  notice.className = 'closing-notice'
+  notice.setAttribute('role', 'status')
+  notice.innerHTML = '<p>Đã đến giờ đóng cửa</p>'
+  app.append(notice)
+  persist()
+  window.setTimeout(() => {
+    closing = false
+    screen.inert = false
+    notice.remove()
+    options.departure = null
+    app.querySelectorAll('.payment-burst').forEach(burst => burst.remove())
+    showReport(game)
+  }, 1500)
+}
+
 function handle(button: HTMLButtonElement): void {
+  if (closing) return
   const { action: buttonAction, id, value } = button.dataset
   const action = actionOf(button)
   if (!action || action === 'brand' || (!options.home && !lessonAllows(state, action, id))) return
+  if (action === 'queue-scroll') {
+    if (button.getAttribute('aria-disabled') === 'true') return
+    const viewport = screen.querySelector<HTMLElement>('.queue-viewport')
+    if (viewport) {
+      viewport.scrollLeft += viewport.clientWidth * (id === 'left' ? -.7 : .7)
+      updateLayout()
+    }
+    return
+  }
   if (action !== 'mute' && action !== 'deliver' && action !== 'mix') sound('tap', muted())
   if (action === 'new') {
     if (state) showModal('reset')
@@ -599,7 +666,12 @@ screen.addEventListener('keydown', event => {
 })
 
 screen.addEventListener('pointerdown', event => {
-  if (!(event.target instanceof Element) || event.button !== 0 || drag) return
+  if (closing || !(event.target instanceof Element) || event.button !== 0 || drag) return
+  const viewport = event.target.closest<HTMLElement>('.queue-viewport[data-scrollable]')
+  if (event.isPrimary && viewport) {
+    queueDrag = { pointerId: event.pointerId, x: event.clientX, scrollLeft: viewport.scrollLeft, moved: false }
+    return
+  }
   const mixer = event.target.closest<HTMLButtonElement>('button[data-action=mix]')
   if (mixer && !mixer.disabled && lessonAllows(state, 'mix') && !state?.shift?.bowl.mixing && !mixHold) {
     mixHold = { pointerId: event.pointerId, timer: window.setTimeout(() => {
@@ -616,6 +688,18 @@ screen.addEventListener('pointerdown', event => {
 })
 
 window.addEventListener('pointermove', event => {
+  if (queueDrag?.pointerId === event.pointerId) {
+    const distance = event.clientX - queueDrag.x
+    if (!queueDrag.moved) {
+      if (Math.abs(distance) < 8) return
+      queueDrag.moved = true
+      // Capture on the stable screen, since arrivals can replace the scene during a drag.
+      screen.setPointerCapture(event.pointerId)
+    }
+    const viewport = screen.querySelector<HTMLElement>('.queue-viewport')
+    if (viewport) viewport.scrollLeft = queueDrag.scrollLeft - distance
+    return
+  }
   if (!drag || drag.pointerId !== event.pointerId) return
   if (!drag.ghost) {
     if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 8) return
@@ -633,6 +717,7 @@ window.addEventListener('pointermove', event => {
 })
 
 function finishDrag(event: PointerEvent): void {
+  if (queueDrag?.pointerId === event.pointerId) queueDrag = null
   if (mixHold?.pointerId === event.pointerId) {
     window.clearTimeout(mixHold.timer)
     mixHold = null
@@ -660,7 +745,10 @@ function finishDrag(event: PointerEvent): void {
 window.addEventListener('pointerup', finishDrag)
 window.addEventListener('pointercancel', finishDrag)
 window.addEventListener('scroll', updateLayout, { passive: true })
-screen.addEventListener('scroll', positionTutorial, { capture: true, passive: true })
+screen.addEventListener('scroll', event => {
+  if (event.target instanceof HTMLElement && event.target.matches('.queue-viewport')) updateLayout()
+  else positionTutorial()
+}, { capture: true, passive: true })
 window.addEventListener('resize', resizeLayout)
 window.visualViewport?.addEventListener('resize', resizeLayout)
 // Retry blocked autoplay inside a gesture, including keyboard-only play.
@@ -690,7 +778,10 @@ function loop(now: number): void {
   const changed = tick(state, Math.max(0, delta))
   syncMixingSound()
   if (changed) {
-    if (!state.shift) return showReport(state)
+    if (!state.shift) {
+      if (state.reports.at(-1)?.endReason === 'time') return showClosingNotice(state)
+      return showReport(state)
+    }
     if (guest?.id !== currentCustomer(state)?.id || (progress < 100 && mixProgress(state) >= 100)) options.heatOpen = false
     if (guest?.id !== currentCustomer(state)?.id) {
       options.counterTab = initialCounterTab(state)

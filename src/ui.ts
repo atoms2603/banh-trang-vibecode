@@ -237,11 +237,20 @@ function queueScene(state: GameState, options: ScreenOptions): string {
   const line = speaking ? speaking.special ? 'Mình ghé thử thách tiệm một chút nha!' : chapter?.greeting
     ?? (speaking.order.quantity > 1 ? `Cho ${speaking.order.quantity} bịch nha!` : profiles[speaking.profile].line) : ''
   return `<section class="queue-scene" aria-label="Hàng khách đợi">
-    <img class="ganh-art" src="./art/ganh.webp" width="640" height="480" alt="Gánh bánh tráng với hai thúng tre và dù hồng" draggable="false">
-    ${speaking ? `<div class="customer-speech" id="customer-speech"><div class="customer-speech-body"><strong>${profiles[speaking.profile].name}</strong><br>${escape(line)}</div></div>` : ''}
-    <div class="customers">${queue.length ? queue.map(customer => customerFigure(state, customer, options)).join('')
-      : `<p class="queue-empty">${currentShiftPhase(state).id === 'closing' ? 'Đã ngừng đón khách mới.' : enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
-    ${options.departure ? `<div class="departure" style="--departure-duration:${options.departure.durationMs}ms" aria-hidden="true"><span>${escape(options.departure.text)}</span><div>${guestSprite(options.departure.profile)}</div></div>` : ''}
+    <div class="queue-viewport" id="queue-viewport" role="group" aria-label="Vỉa hè">
+      <div class="queue-street">
+        <img class="ganh-art" src="./art/ganh.webp" width="640" height="480" alt="Gánh bánh tráng với hai thúng tre và dù hồng" draggable="false">
+        ${speaking ? `<div class="customer-speech" id="customer-speech"><div class="customer-speech-body"><strong>${profiles[speaking.profile].name}</strong><br>${escape(line)}</div></div>` : ''}
+        <div class="customers">${queue.length ? queue.map(customer => customerFigure(state, customer, options)).join('')
+          : `<p class="queue-empty">${currentShiftPhase(state).id === 'closing' ? 'Đã ngừng đón khách mới.' : enabledDishes(state).some(id => hasStock(state.inventory, menu[id].recipe)) ? 'Đang đợi khách ghé tiệm…' : 'Nguyên liệu đã hết cho các món đang bán.'}</p>`}</div>
+        ${options.departure ? `<div class="departure" style="--departure-duration:${options.departure.durationMs}ms" aria-hidden="true"><span>${escape(options.departure.text)}</span><div>${guestSprite(options.departure.profile)}</div></div>` : ''}
+      </div>
+    </div>
+    <span class="queue-count">${queue.length} khách</span>
+    <div class="queue-controls" hidden>
+      <button type="button" data-action="queue-scroll" data-id="left" aria-label="Xem về phía gánh" aria-controls="queue-viewport">${icon('arrow', 15)}</button>
+      <button type="button" data-action="queue-scroll" data-id="right" aria-label="Xem về cuối hàng" aria-controls="queue-viewport">${icon('arrow', 15)}</button>
+    </div>
   </section>`
 }
 
@@ -320,17 +329,13 @@ function receiptSummary(guest: Customer, active: boolean, bowl?: Bowl): string {
 function orderDetails(state: GameState): string {
   const active = currentCustomer(state)
   const bowl = state.shift?.bowl
-  const ids = active ? orderIngredientIds(active.order) : []
-  const visible = ids.slice(0, 5)
-  const remainder = ids.slice(5)
-  const missing = active ? remainder.filter(id => ingredientProgress(id, active.order, bowl).missing).length : 0
   return `<section class="order-details" id="order-details" aria-label="Phiếu order đang làm" data-order-id="${active?.id ?? ''}">
       <div class="compact-order">
         <div class="compact-order-head"><span>${active ? `#${String(active.id).padStart(3, '0')} · ${profiles[active.profile].name}` : 'Phiếu order'}</span>
           ${active ? `<button type="button" data-action="order" aria-label="Xem toàn bộ phiếu order của ${profiles[active.profile].name}">${icon('ledger', 14)} Chi tiết</button>` : ''}
         </div>
         ${active ? `<div class="compact-order-dish"><strong>${menu[active.order.dish].name.replace(/^Bánh tráng (trộn )?/, '')}</strong><span>${active.servedPortions.length}/${active.order.quantity} bịch · ${money(active.order.price)}</span></div>
-          <ul class="compact-order-recipe" aria-label="Nguyên liệu theo đơn">${visible.map(id => orderIngredient(id, active.order, bowl)).join('')}${remainder.length ? `<li><button type="button" class="recipe-more" data-action="order" aria-label="Xem ${remainder.length} nguyên liệu còn lại, còn thiếu ${missing}">+${remainder.length}<small>${missing ? `Thiếu ${missing}` : '✓ Đủ'}</small></button></li>` : ''}</ul>
+          <ul class="compact-order-recipe" aria-label="Nguyên liệu theo đơn">${orderIngredientIds(active.order).map(id => orderIngredient(id, active.order, bowl)).join('')}</ul>
           <div class="compact-order-notes"><span>${heatLabels[active.order.heat]}</span>${active.order.noCilantro ? '<span>Bỏ rau răm</span>' : ''}${active.order.extraMango ? '<span>×2 xoài</span>' : ''}${active.special ? `<span class="compact-special">★ ${specialChallenges[active.special].label}</span>` : ''}</div>`
           : '<p class="compact-order-empty">Chọn khách để xem món cần làm.</p>'}
       </div>

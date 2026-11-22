@@ -118,7 +118,7 @@ test('full queues skip arrivals without backlog; stockouts and the last minute a
   for (const level of [1, 2] as Level[]) {
     const state = stocked(2, level)
     start(state)
-    for (let count = 0; count < (level === 1 ? 3 : 4); count++) {
+    for (let count = 0; count < profiles.length; count++) {
       state.shift!.nextArrivalMs = state.shift!.elapsedMs
       tick(state, 1, () => .5)
     }
@@ -294,19 +294,13 @@ test('special chance and menu eligibility are decided on opening and survive sav
   assert.equal(state.shift!.queue.some(guest => guest.special), false)
 })
 
-test('special waits for capacity until 180s, then drops the event without charging or rewards', () => {
-  for (const blocked of ['queue', 'stock', 'price'] as const) {
+test('special waits for eligible stock and prices until 180s, then drops the event without charging or rewards', () => {
+  for (const blocked of ['stock', 'price'] as const) {
     let state = stocked(3)
     start(state, () => 0)
-    for (let i = 0; i < 3; i++) arrive(state, i)
     state.shift!.elapsedMs = 160000
-    for (const guest of state.shift!.queue) guest.arrivalMs = 159000
-    if (blocked !== 'queue') {
-      state.shift!.queue = []
-      state.shift!.activeId = null
-      if (blocked === 'stock') state.inventory.rice = 0
-      else state.menu.salt.price = 20000
-    }
+    if (blocked === 'stock') state.inventory.rice = 0
+    else state.menu.salt.price = 20000
     tick(state, 1)
     assert.equal(state.daily!.highlight!.status, 'pending')
     state = parseSave(JSON.stringify(state))!
@@ -326,18 +320,17 @@ test('special waits for capacity until 180s, then drops the event without chargi
   assert.equal(early.daily!.highlight!.status, 'skipped')
 })
 
-test('a scheduled special takes a newly freed queue slot without replaying missed ordinary arrivals', () => {
+test('a scheduled special joins a full ordinary queue without replaying missed arrivals', () => {
   const state = stocked(3)
   start(state, () => 0)
-  for (let profile = 0; profile < 3; profile++) arrive(state, profile)
+  for (const profile of profiles.keys()) {
+    if (profile !== state.daily!.highlight!.profile) arrive(state, profile)
+  }
   state.shift!.elapsedMs = 160000
   for (const guest of state.shift!.queue) guest.arrivalMs = 159000
   tick(state, 1)
-  assert.equal(state.daily!.highlight!.status, 'pending')
-  cook(state)
-  tick(state, 1)
   assert.equal(state.daily!.highlight!.status, 'arrived')
-  assert.equal(state.shift!.queue.length, 3)
+  assert.equal(state.shift!.queue.length, profiles.length)
   assert.equal(state.shift!.queue.filter(guest => guest.special).length, 1)
 })
 

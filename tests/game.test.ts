@@ -420,7 +420,7 @@ test('an early close records the actual hour, writes off the active bowl, and se
   const report = state.reports[0]
   assert.equal(report.closedAt, 677)
   assert.equal(report.waste, 2000)
-  assert.equal(report.lost, 3)
+  assert.equal(report.lost, 4)
   assert.equal(report.overhead, 15000)
   const resumed = parseSave(JSON.stringify(state))!
   assert.equal(resumed.reports[0].closedAt, report.closedAt)
@@ -513,6 +513,8 @@ test('sidewalk customers keep their order, selection and accessible dialogue', (
   })
   const scene = html.slice(html.indexOf('class="queue-scene"'), html.indexOf('class="order-board"'))
   assert.match(scene, /src="\.\/art\/ganh\.webp"/)
+  assert.match(scene, /class="queue-viewport"[\s\S]*class="queue-street"[\s\S]*class="ganh-art"[\s\S]*class="customers"/)
+  assert.match(scene, /class="queue-count">2 khách/)
   assert.doesNotMatch(scene, /counter-art|preserveAspectRatio="none"/)
   assert.equal((scene.match(/id="customer-speech"/g) ?? []).length, 1)
   assert.match(scene, /aria-pressed="true"[^>]*aria-describedby="customer-speech"/)

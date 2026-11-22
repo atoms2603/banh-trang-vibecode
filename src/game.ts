@@ -382,14 +382,14 @@ function spawnCustomer(state: GameState, random: () => number): boolean {
   const shift = state.shift
   if (!shift) return false
   const dishes = enabledDishes(state).filter(id => hasStock(state.inventory, menu[id].recipe))
-  if (!dishes.length || shift.queue.length >= (state.level === 1 ? 3 : 4)) {
+  const freeProfiles = profiles.map((_, index) => index).filter(index => !shift.queue.some(customer => customer.profile === index)
+    && index !== state.daily?.highlight?.profile)
+  if (!dishes.length || !freeProfiles.length) {
     shift.nextArrivalMs = shift.elapsedMs + 2000
     return false
   }
   const options = dishes.flatMap(id => priceBand(id, state.menu[id].price) === 'low' ? [id, id] : [id])
   const dish = options[Math.floor(random() * options.length)]
-  const freeProfiles = profiles.map((_, index) => index).filter(index => !shift.queue.some(customer => customer.profile === index)
-    && index !== state.daily?.highlight?.profile)
   const customer = makeCustomer(state, dish, freeProfiles[Math.floor(random() * freeProfiles.length)], random)
 
   shift.nextArrivalMs = shift.elapsedMs + arrivalDelay(state, random, dish)
@@ -466,8 +466,7 @@ function spawnHighlight(state: GameState, random: () => number): boolean {
     schedule.status = 'skipped'
     return true
   }
-  if (shift.elapsedMs < schedule.atMs || shift.queue.length >= (state.level === 1 ? 3 : 4)
-    || shift.queue.some(customer => customer.profile === schedule!.profile)) return false
+  if (shift.elapsedMs < schedule.atMs || shift.queue.some(customer => customer.profile === schedule!.profile)) return false
   let dishes = dishesForHighlight(state, schedule)
   if (!dishes.length && state.dayRules === 'short-105') {
     const fallback = fallbackHighlight(state, schedule.atMs, true)

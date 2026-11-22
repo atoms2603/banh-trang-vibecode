@@ -3,7 +3,7 @@
 html.counter-active, body.counter-active { height: var(--game-height, 100dvh); min-height: 0; overflow: hidden; overscroll-behavior: none; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .compact-layout {
-  --compact-ticket-height: 144px;
+  --compact-ticket-height: 174px;
   --counter-row-height: 92px;
   --counter-tray-gap: 4px;
   display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 1500px;
@@ -37,8 +37,8 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
   --pavement-base: max(28px, 17%);
 }
 .compact-layout .ganh-art { left: 7px; bottom: var(--pavement-base); width: var(--stall-width); height: auto; aspect-ratio: 4/3; max-height: calc(100% - var(--pavement-base) - 4px); object-position: left bottom; }
-.compact-layout .customers { inset: auto 5px calc(var(--pavement-base) - 24px) calc(var(--stall-width) + 16px); height: auto; gap: clamp(4px, 1cqw, 12px); justify-content: flex-start; align-items: flex-end; }
-.compact-layout .customer-figure { flex: 0 0 var(--customer-slot); width: var(--customer-slot); min-width: 44px; min-height: 44px; height: auto; max-width: none; justify-content: flex-end; padding: 0 1px; }
+.compact-layout .customers { bottom: calc(var(--pavement-base) - 24px); margin-right: 8px; gap: clamp(4px, 1cqw, 12px); }
+.compact-layout .customer-figure { width: var(--customer-slot); min-height: 44px; height: auto; max-width: none; justify-content: flex-end; padding: 0 1px; }
 .compact-layout .customer-sprite { flex: 0 0 auto; width: min(calc(100% - 6px), 64px); height: auto; max-height: none; max-width: 100%; aspect-ratio: 51/65; }
 .compact-layout .customer-figure b { flex-shrink: 0; font-size: 11px; line-height: 1.25; }
 .compact-layout .patience { flex-shrink: 0; height: 5px; margin-top: 3px; }
@@ -57,12 +57,10 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
 .compact-order-dish { display: flex; align-items: center; justify-content: space-between; gap: 6px; line-height: 1.2; }
 .compact-order-dish > strong { font-size: 15px; text-transform: capitalize; }
 .compact-order-dish > span { font-size: 11px; white-space: nowrap; }
-.compact-order-recipe { display: flex; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.compact-order-recipe { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
 .compact-layout .compact-order .order-ingredient { display: inline-flex; width: 40px; height: 38px; padding: 1px; }
 .compact-layout .compact-order .order-ingredient .tray-contents { width: 32px; height: 31px; }
 .compact-order .order-ingredient-name { display: none; }
-.recipe-more { display: grid; place-content: center; gap: 0; min-width: 40px; min-height: 38px; border: 1px dashed #c5a98c; border-radius: 4px; background: #f7eddc; font-size: 14px; font-weight: 900; line-height: 1.1; }
-.recipe-more small { font-size: 10px; font-weight: 700; }
 .compact-order-notes { display: flex; flex-wrap: wrap; gap: 3px; font-size: 11px; line-height: 1.2; }
 .compact-order-notes > span { padding: 2px 4px; background: #f2e6cd; border-radius: 3px; }
 .compact-order-notes .compact-special { background: #fbe3ab; }
@@ -120,6 +118,9 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
 .desktop-order-open { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-height: 44px; margin-bottom: 4px; padding: 4px 8px; border: 1px solid #dfbfa2; border-radius: 6px; background: #f8ebd6; font-size: 12px; }
 .counter-active .customer-speech { z-index: 10; font-size: 11px; width: 190px; pointer-events: none; }
 .counter-active .toast { max-width: calc(100vw - 24px); bottom: max(62px, env(safe-area-inset-bottom)); padding: 6px 10px; font-size: 12px; }
+@media (max-width: 719px), (orientation: landscape) and (max-height: 500px) {
+  .counter-active .toast { top: calc(max(6px, env(safe-area-inset-top)) + 56px); bottom: auto; }
+}
 .payment-burst { position: fixed; left: var(--pay-x, 50%); top: var(--pay-y, 50%); }
 .payment-burst .payment-amount { font-size: 16px; padding: 4px 8px; animation: counter-payment-label 1s ease-out both; }
 .payment-coin { position: absolute; display: grid; place-items: center; color: #98652f; background: #ffdc78; border-radius: 50%; width: 23px; height: 23px; animation: counter-coin-flight .95s cubic-bezier(.25,.6,.5,1) both; animation-delay: calc(var(--coin-i) * 25ms); }
@@ -138,7 +139,7 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
 
 /* Phone landscape and tablet landscape share the two-hand counter. */
 @media (min-width: 560px) and (orientation: landscape) and (max-width: 1199px), (min-width: 560px) and (orientation: landscape) and (max-height: 649px) {
-  .compact-layout { gap: 4px; --compact-ticket-height: 136px; --counter-row-height: 49px; }
+  .compact-layout { gap: 4px; --compact-ticket-height: 156px; --counter-row-height: 49px; }
   .compact-layout > .counter-hud { flex-basis: 44px; height: 44px; }
   .compact-layout .shop-screen { grid-template-columns: minmax(280px, 46fr) minmax(0, 54fr); grid-template-rows: minmax(70px, 150px) var(--compact-ticket-height) minmax(0, 1fr); grid-template-areas: 'front kitchen' 'order kitchen' '. kitchen'; gap: 6px 10px; padding: 6px; }
   .compact-layout .kitchen { grid-template-rows: 120px minmax(0, 1fr) 44px; gap: 4px; }
@@ -152,8 +153,6 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
   .compact-layout .compact-order .order-ingredient { width: 30px; height: 32px; }
   .compact-layout .compact-order .order-ingredient .tray-contents { width: 27px; height: 27px; }
   .compact-order-recipe { gap: 3px; }
-  .recipe-more { min-width: 30px; min-height: 32px; }
-  .recipe-more small { font-size: 10px; }
   .compact-layout .bowl-caption span { display: none; }
   .compact-layout .bowl-art { top: 18px; max-height: 200px; height: calc(100% - 35px); margin: 0; }
   .counter-sheet { width: min(460px, 65vw); height: var(--game-height, 100dvh); max-height: var(--game-height, 100dvh); margin: 0 0 0 auto; border-radius: 16px 0 0 16px; }
@@ -214,7 +213,7 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
 }
 @media (min-width: 720px) and (min-height: 650px) and (orientation: portrait) {
   .compact-layout { --counter-row-height: 132px; }
-  .compact-layout .shop-screen { grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: 160px 150px minmax(0, 1fr) 46px; grid-template-areas: 'front front' 'order bowl' 'ingredients ingredients' 'action action'; }
+  .compact-layout .shop-screen { grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: 160px var(--compact-ticket-height) minmax(0, 1fr) 46px; grid-template-areas: 'front front' 'order bowl' 'ingredients ingredients' 'action action'; }
   .compact-layout .kitchen { display: contents; }
   .compact-layout .bowl-area { grid-area: bowl; }
   .compact-layout .ingredient-station { grid-area: ingredients; }
@@ -223,7 +222,6 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
   .compact-layout .compact-order { display: grid; }
   .compact-layout .compact-order .order-ingredient { width: 34px; height: 34px; }
   .compact-layout .compact-order .order-ingredient .tray-contents { width: 29px; height: 29px; }
-  .compact-layout .recipe-more { min-width: 34px; min-height: 34px; }
   .compact-layout .compact-order-recipe { gap: 3px; }
 }
 @media (max-height: 740px) and (orientation: portrait) {
@@ -235,7 +233,7 @@ html.counter-active, body.counter-active { height: var(--game-height, 100dvh); m
   .compact-layout .kitchen { grid-template-rows: 80px minmax(0, 1fr) 44px; }
 }
 @media (max-height: 610px) and (orientation: portrait) {
-  .compact-layout { --compact-ticket-height: 128px; --counter-row-height: 48px; }
+  .compact-layout { --compact-ticket-height: 160px; --counter-row-height: 48px; }
   .compact-layout .shop-screen { grid-template-rows: 78px var(--compact-ticket-height) minmax(0, 1fr); gap: 4px; padding: 4px; }
   .compact-layout .kitchen { gap: 4px; grid-template-rows: 65px minmax(0, 1fr) 44px; }
   .compact-layout .counter-main-action { height: 44px; }

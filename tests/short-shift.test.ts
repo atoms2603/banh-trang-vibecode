@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ingredientIds, ingredients, levels, menuIds } from '../src/data.ts'
+import { ingredientIds, ingredients, levels, menuIds, profiles } from '../src/data.ts'
 import { createDailyActivity, currentShiftPhase, shiftNotice } from '../src/engagement.ts'
 import { priceOf, salesRevenue, sumReports } from '../src/economy.ts'
 import { addHeat, addIngredient, closeShop, currentCustomer, deliver, finishMix, mixDuration, newGame,
@@ -122,13 +122,15 @@ test('arrival phase changes rescale remaining delay; the ten-second rest never a
   assert.equal(cheap.shift!.nextArrivalMs, 55000 + 10800 * .72)
 })
 
-test('full queues retain capacity and retry without spawning a backlog', () => {
+test('queues fit all available profiles at any level and retry without spawning duplicates', () => {
   for (const level of [1, 2] as const) {
     const state = start(stocked(2, level))
-    for (let n = 0; n < (level === 1 ? 3 : 4); n++) {
+    for (let n = 0; n < profiles.length - 1; n++) {
       state.shift!.nextArrivalMs = state.shift!.elapsedMs
       tick(state, 1, () => .1)
     }
+    assert.equal(new Set(state.shift!.queue.map(guest => guest.profile)).size, profiles.length - 1)
+    assert.equal(parseSave(JSON.stringify(state))!.shift!.queue.length, profiles.length - 1)
     const count = state.nextCustomerId
     state.shift!.nextArrivalMs = state.shift!.elapsedMs
     tick(state, 1000, () => .1)
@@ -226,17 +228,15 @@ test('special visits use the 35% threshold, retain priority and fall back if the
   }
   const state = start(stocked(3), () => 0)
   firstGuest(state)
-  while (state.shift!.queue.length < 3) {
+  while (state.shift!.queue.length < profiles.length - 1) {
     state.shift!.nextArrivalMs = state.shift!.elapsedMs
     tick(state, 1, () => .1)
   }
   state.shift!.elapsedMs = 59999
   state.shift!.nextArrivalMs = 60000
-  tick(state, 1, () => .1)
-  assert.equal(state.daily!.highlight!.status, 'pending')
-  cook(state)
   const lastId = state.nextCustomerId
   tick(state, 1, () => .1)
+  assert.equal(state.shift!.queue.length, profiles.length)
   assert.equal(state.shift!.queue.at(-1)!.special, 'perfect')
   assert.equal(state.nextCustomerId, lastId + 1)
   assert.equal(state.daily!.highlight!.status, 'arrived')
@@ -274,7 +274,7 @@ test('finished stories fall back to two bags; impossible visits expire at 85s wi
   assert.equal(restored.reviews.length, 0)
 })
 
-test('new special rewards pay once for perfect and crispy servings, and a full queue expires at the deadline', () => {
+test('new special rewards pay once for perfect and crispy servings, and stockouts expire at the deadline', () => {
   for (const [dish, cash, xp] of [['salt', 5000, 5], ['eggs', 4000, 4]] as const) {
     let state = start(stocked(3, 2, dish), () => 0)
     reachHighlight(state)
@@ -294,6 +294,7 @@ test('new special rewards pay once for perfect and crispy servings, and a full q
     tick(full, 1, () => .1)
   }
   for (const guest of full.shift!.queue) guest.arrivalMs = 59000
+  full.inventory.rice = 0
   full.shift!.elapsedMs = 59999
   full.shift!.nextArrivalMs = 1e9
   tick(full, 1)
