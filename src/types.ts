@@ -91,11 +91,19 @@ export interface Order {
   // Price and recipe describe one bag.
   price: number
   recipe: Recipe
-  heat: Heat
+  heat?: Heat
   extraMango: boolean
   noCilantro: boolean
   pricey: boolean
+  extra?: 'rice' | 'kumquat' | 'shrimpSalt' | 'chili'
 }
+
+export type SeasoningId = 'kumquat' | 'shrimpSalt' | 'chili' | 'oil' | 'tamarind' | 'blackSauce'
+export type Coating = Partial<Record<Exclude<IngredientId, 'rice' | 'pack'>, number[]>>
+export type IssueKind = 'missing' | 'extra' | 'uneven' | 'heat' | 'soggy' | 'sequence' | 'final-mix' | 'slow' | 'price'
+export interface OrderIssue { kind: IssueKind; ingredient?: IngredientId }
+export interface PortionDetails { recipe: Recipe; heat: Heat; issues: OrderIssue[] }
+export interface PortionAssessment { stars: Stars; text: string; details?: PortionDetails }
 
 export interface Customer {
   id: number
@@ -103,7 +111,7 @@ export interface Customer {
   arrivalMs: number
   patienceMs: number
   order: Order
-  servedPortions: Array<{ stars: Stars; text: string }>
+  servedPortions: PortionAssessment[]
   storyStage?: number
   special?: SpecialKind
 }
@@ -118,6 +126,7 @@ export interface Review {
   text: string
   departureReason?: DepartureReason
   reply?: ReplyId
+  details?: { order: Pick<Order, 'dish' | 'recipe' | 'heat' | 'extra' | 'quantity' | 'noCilantro' | 'extraMango'>; portions: Array<PortionDetails | null> }
 }
 
 export interface Bowl {
@@ -129,6 +138,9 @@ export interface Bowl {
   pack: Packaging | null
   sequenceErrors: number
   soggy: boolean
+  coating?: Coating
+  crunchFolds?: number
+  evenCuePlayed?: true
 }
 
 export interface SalesLine {
@@ -155,6 +167,7 @@ export interface Shift {
   queue: Customer[]
   activeId: number | null
   bowl: Bowl
+  directBowl?: true
 }
 
 export interface DailyReport extends DayTally {
@@ -175,7 +188,7 @@ export interface DailyReport extends DayTally {
 }
 
 export interface GameState {
-  version: 7
+  version: 9
   dayRules: DayRulesId
   tutorialStep?: number
   phase: Stage

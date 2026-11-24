@@ -67,7 +67,7 @@ export function completeVisit(state: GameState, customer: Customer, stars: Stars
   if (customer.special) {
     const crunchy = (['peanut', 'shallot'] as const).filter(id => customer.order.recipe[id])
     const crispy = crunchy.length > 0 && crunchy.every(id => bowl.ingredients[id] === customer.order.recipe[id])
-      && !bowl.soggy && bowl.finalMixed && stars >= 4
+      && !bowl.soggy && (state.shift?.directBowl || bowl.finalMixed) && stars >= 4
     const passed = customer.special === 'perfect' ? stars === 5 : crispy
     if (passed) {
       const reward = specialChallenges[customer.special]

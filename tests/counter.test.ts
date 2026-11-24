@@ -9,7 +9,7 @@ import type { ScreenOptions } from '../src/ui.ts'
 
 const options: ScreenOptions = {
   home: false, initialMute: true, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
-  modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+  modal: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
 }
 
 function stocked() {
@@ -17,6 +17,7 @@ function stocked() {
   state.level = 4
   for (const id of ingredientIds) state.inventory[id] = 50
   openShop(state, () => .99)
+  delete state.shift!.directBowl
   tick(state, 901, () => 0)
   return state
 }

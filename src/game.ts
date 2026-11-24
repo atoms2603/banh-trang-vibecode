@@ -1,9 +1,10 @@
 import { engagementRules, heatLabels, ingredientIds, ingredients, levels, market, menu, menuIds, profiles, regularStories, shiftPolicies } from './data.ts'
+import { bowlZones, extraPortionIds, foldCoating, isSeasoning, pourCoating, zoneIsEven } from './coating.ts'
 import { addExperience, defaultPrice, emptyTally, hasStock, money, priceBand, priceOf, settleDay, tallySale } from './economy.ts'
 import { completeVisit, createDailyActivity, createStories, currentShiftPhase, getShiftRules, shiftNotice } from './engagement.ts'
-import { reviewLine } from './reviews.ts'
+import { reviewLine, saltIssueLine } from './reviews.ts'
 import { advanceTutorial, currentLesson } from './tutorial.ts'
-import type { Bowl, CloseReason, Customer, DepartureReason, GameState, Heat, HighlightVisit, IngredientId, Inventory, Level, MenuId, Order, Packaging, Recipe, ReplyId, SpecialKind, Stars } from './types.ts'
+import type { Bowl, CloseReason, Customer, DepartureReason, GameState, Heat, HighlightVisit, IngredientId, Inventory, Level, MenuId, Order, OrderIssue, Packaging, PortionAssessment, Recipe, SpecialKind, Stars } from './types.ts'
 
 export const OPEN_MINUTE = 8 * 60
 export const CLOSE_MINUTE = 21 * 60
@@ -31,7 +32,7 @@ function emptyBowl(): Bowl {
 
 export function newGame(guided = false): GameState {
   return {
-    version: 7, dayRules: 'short-105', ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
+    version: 9, dayRules: 'short-105', ...(guided ? { tutorialStep: 0 } : {}), phase: 'prep', day: 1, cash: 150000, reputation: 0, level: 1,
     inventory: Object.fromEntries(ingredientIds.map(id => [id, 0])) as Inventory,
     menu: Object.fromEntries(menuIds.map(id => [id, { enabled: !guided && id === 'salt', price: defaultPrice(id) }])) as GameState['menu'],
     reviews: [], reports: [], staff: false, muted: false, nextCustomerId: 1,
@@ -88,13 +89,29 @@ export function openShop(state: GameState, random: () => number = Math.random): 
   const warning = openingProblem(state)
   if (warning) return problem(warning)
   state.phase = 'shop'
-  state.shift = { elapsedMs: 0, nextArrivalMs: engagementRules.firstArrivalMs, queue: [], activeId: null, bowl: emptyBowl() }
+  state.shift = { elapsedMs: 0, nextArrivalMs: engagementRules.firstArrivalMs, queue: [], activeId: null, bowl: emptyBowl(),
+    ...(state.dayRules === 'short-105' ? { directBowl: true } : {}) }
   if (state.daily) state.daily.highlight = planHighlight(state, random)
   return success()
 }
 
 export function currentCustomer(state: GameState): Customer | undefined {
   return state.shift?.queue.find(customer => customer.id === state.shift?.activeId)
+}
+
+export function usesDirectBowl(state: GameState): boolean {
+  return state.shift?.directBowl === true && currentCustomer(state) !== undefined
+}
+
+export function stirBowl(state: GameState, zone: number): boolean {
+  const bowl = state.shift?.bowl
+  if (!usesDirectBowl(state) || !bowl?.ingredients.rice || bowl.pack || !Number.isInteger(zone) || zone < 0 || zone >= bowlZones) return false
+  if (bowl.coating) foldCoating(bowl.coating, zone)
+  if (needsCrunchLast(bowl) && !bowl.soggy) {
+    bowl.crunchFolds = (bowl.crunchFolds ?? 0) + 1
+    if (bowl.crunchFolds >= 3) bowl.soggy = true
+  }
+  return true
 }
 
 export function mixDuration(state: GameState): number {
@@ -123,7 +140,7 @@ function needsCrunchLast(bowl: Bowl): boolean {
   return Boolean(bowl.ingredients.peanut || bowl.ingredients.shallot)
 }
 
-export function addIngredient(state: GameState, id: IngredientId): Result {
+export function addIngredient(state: GameState, id: IngredientId, placement?: { weights: number[]; zone: number }): Result {
   const bowl = state.shift?.bowl
   if (!bowl || !currentCustomer(state)) return problem('Chọn khách trước khi lấy nguyên liệu.')
   if (bowl.mixing) return problem('Đợi trộn lần đầu xong rồi thêm nguyên liệu nhé.')
@@ -131,6 +148,18 @@ export function addIngredient(state: GameState, id: IngredientId): Result {
   if (state.level < ingredients[id].level) return problem('Nguyên liệu chưa mở khóa.')
   if (id === 'pack' || state.inventory[id] <= 0) return problem(ingredients[id].short + ' đã hết.')
   const amount = bowl.ingredients[id] ?? 0
+  if (usesDirectBowl(state)) {
+    if (!placement || placement.weights.length !== bowlZones
+      || !Number.isInteger(placement.zone) || placement.zone < 0 || placement.zone >= bowlZones
+      || !placement.weights.every(weight => Number.isFinite(weight) && weight >= 0)) return problem('Kéo nguyên liệu vào lòng thau.')
+    if (amount >= 3) return problem('Thau đã có đủ ' + ingredients[id].short.toLocaleLowerCase('vi') + '.')
+    if (id !== 'rice' && !bowl.ingredients.rice) return problem('Cho bánh tráng vào thau trước.')
+    if (isSeasoning(id) && needsCrunchLast(bowl)) bowl.soggy = true
+    if (id !== 'rice') pourCoating(bowl.coating ??= {}, id, isSeasoning(id) ? placement.weights : [], placement.zone)
+    bowl.ingredients[id] = amount + 1
+    state.inventory[id]--
+    return success()
+  }
   if (amount >= 3 || (id === 'rice' && amount)) return problem('Thau đã có đủ ' + ingredients[id].short.toLocaleLowerCase('vi') + '.')
 
   const category = ingredients[id].category
@@ -151,6 +180,7 @@ export function addIngredient(state: GameState, id: IngredientId): Result {
 }
 
 export function addHeat(state: GameState, heat: Heat): Result {
+  if (usesDirectBowl(state)) return problem('Kéo sa tế vào lòng thau để nêm.')
   const bowl = state.shift?.bowl
   if (!bowl || !currentCustomer(state)) return problem('Chọn khách trước khi chọn mức cay.')
   if (bowl.ingredients.chili) return problem('Sa tế đã vào thau. Đổ phần bánh nếu muốn làm lại mức cay.')
@@ -163,6 +193,7 @@ export function addHeat(state: GameState, heat: Heat): Result {
 }
 
 export function toggleMix(state: GameState): Result {
+  if (usesDirectBowl(state)) return problem('Kéo trên thau để đảo bánh.')
   const bowl = state.shift?.bowl
   if (!bowl?.ingredients.rice) return problem('Cho bánh tráng vào thau trước.')
   if (mixProgress(state) >= 100) return problem('Bánh đã thấm gia vị. Bạn có thể thêm topping.')
@@ -171,6 +202,7 @@ export function toggleMix(state: GameState): Result {
 }
 
 export function finishMix(state: GameState): Result {
+  if (usesDirectBowl(state)) return problem('Kéo trên thau để đảo bánh.')
   const bowl = state.shift?.bowl
   if (!bowl || mixProgress(state) < 100) return problem('Trộn lần đầu đến 100% trước nhé.')
   if (bowl.pack) return problem('Phần bánh đã đóng gói.')
@@ -182,7 +214,7 @@ export function finishMix(state: GameState): Result {
 export function packBowl(state: GameState, type: Packaging = 'bag'): Result {
   const bowl = state.shift?.bowl
   if (!bowl?.ingredients.rice || bowl.mixing) return problem('Chuẩn bị bánh trong thau trước khi đóng gói.')
-  if (mixProgress(state) < 100) return problem('Trộn lần đầu đến 100% trước khi đóng gói.')
+  if (!usesDirectBowl(state) && mixProgress(state) < 100) return problem('Trộn lần đầu đến 100% trước khi đóng gói.')
   if (type !== 'bag') return problem('Bao bì không hợp lệ.')
   if (bowl.pack) {
     bowl.pack = type
@@ -205,7 +237,10 @@ export function trashBowl(state: GameState): Result {
 }
 
 function recordReview(state: GameState, customer: Customer, stars: Stars, text: string, departureReason?: DepartureReason): void {
-  state.reviews.push({ customerId: customer.id, profile: customer.profile, day: state.day, stars, text, ...(departureReason ? { departureReason } : {}) })
+  const { dish, recipe, heat, extra, quantity, noCilantro, extraMango } = customer.order
+  const portions = customer.servedPortions.map(portion => portion.details ?? null)
+  const details = portions.some(Boolean) ? { order: { dish, recipe: { ...recipe }, ...(heat !== undefined ? { heat } : {}), ...(extra ? { extra } : {}), quantity, noCilantro, extraMango }, portions } : undefined
+  state.reviews.push({ customerId: customer.id, profile: customer.profile, day: state.day, stars, text, ...(departureReason ? { departureReason } : {}), ...(details ? { details } : {}) })
   state.tally.stars += stars
   state.tally.reviewCount++
   if (stars >= 3) addExperience(state, stars - 1)
@@ -228,72 +263,101 @@ function loseCustomer(state: GameState, customer: Customer, reason: DepartureRea
 }
 
 export function canDeliver(state: GameState): boolean {
-  return Boolean(currentCustomer(state) && state.shift?.bowl.ingredients.rice && state.shift.bowl.pack && mixProgress(state) >= 100)
+  return Boolean(currentCustomer(state) && state.shift?.bowl.ingredients.rice && state.shift.bowl.pack && (usesDirectBowl(state) || mixProgress(state) >= 100))
 }
 
-export function assessOrder(state: GameState, customer: Customer, bowl: Bowl): { stars: Stars; text: string } {
+export function assessOrder(state: GameState, customer: Customer, bowl: Bowl): PortionAssessment {
   const problems: string[] = []
   let deductions = 0
   const order = customer.order
   const comment = (kind: Parameters<typeof reviewLine>[0], ingredient?: string) => reviewLine(kind, customer, state.reviews, ingredient)
+  const issues: OrderIssue[] = []
+  const track = (kind: OrderIssue['kind'], ingredient?: IngredientId) => issues.push({ kind, ...(ingredient ? { ingredient } : {}) })
+  const result = (stars: Stars, text: string): PortionAssessment => ({ stars, text, details: { recipe: { ...bowl.ingredients }, heat: bowl.heat, issues } })
+  const doseError = (id: IngredientId) => (bowl.ingredients[id] ?? 0) - (order.recipe[id] ?? 0)
 
-  if (bowl.heat !== order.heat) {
-    problems.push(comment(order.heat === 0 ? 'noHeat' : bowl.heat > order.heat ? 'tooHot' : 'tooMild'))
-    deductions += 2
-  }
-  if (order.noCilantro && bowl.ingredients.cilantro) {
-    problems.push(comment('cilantro'))
-    deductions += 2
-  }
-  if (order.extraMango && (bowl.ingredients.mango ?? 0) < 2) {
-    problems.push(comment('mango'))
-    deductions++
-  }
-  if (bowl.soggy) {
-    problems.push(comment('soggy'))
-    deductions += 2
-  }
+  const direct = state.shift?.directBowl === true
+  if (direct) {
+    for (const id of ingredientIds) {
+      if (id === 'pack') continue
+      const difference = doseError(id)
+      if (difference) {
+        track(difference < 0 ? 'missing' : 'extra', id)
+        deductions++
+      } else if (isSeasoning(id) && order.recipe[id] && !zoneIsEven(bowl.coating?.[id] ?? [])) {
+        track('uneven', id)
+        deductions++
+      }
+    }
+    if (bowl.soggy) { track('soggy'); deductions += 2 }
+  } else {
+    const heat = order.heat ?? 0
+    if (bowl.heat !== heat) {
+      track('heat', 'chili')
+      problems.push(comment(heat === 0 ? 'noHeat' : bowl.heat > heat ? 'tooHot' : 'tooMild'))
+      deductions += 2
+    }
+    if (order.noCilantro && bowl.ingredients.cilantro) {
+      track('extra', 'cilantro')
+      problems.push(comment('cilantro'))
+      deductions += 2
+    }
+    if (order.extraMango && (bowl.ingredients.mango ?? 0) < 2) {
+      track('missing', 'mango')
+      problems.push(comment('mango'))
+      deductions++
+    }
+    if (bowl.soggy) {
+      track('soggy')
+      problems.push(comment('soggy'))
+      deductions += 2
+    }
 
-  const mismatch = ingredientIds.filter(id => id !== 'chili'
-    && !(id === 'cilantro' && order.noCilantro)
-    && !(id === 'mango' && order.extraMango)
-    && (bowl.ingredients[id] ?? 0) !== (order.recipe[id] ?? 0))
-  for (const id of mismatch) {
-    problems.push(comment((bowl.ingredients[id] ?? 0) < (order.recipe[id] ?? 0) ? 'missing' : 'extra',
-      ingredients[id].short.toLocaleLowerCase('vi')))
-    deductions++
-  }
-  if (bowl.sequenceErrors) {
-    problems.push(comment('uneven'))
-    deductions += Math.min(2, bowl.sequenceErrors)
-  }
-  if (!bowl.finalMixed) {
-    const hasToppings = ingredientIds.some(id => (ingredients[id].category === 'topping' || ingredients[id].category === 'crunch') && bowl.ingredients[id])
-    problems.push(comment(hasToppings ? 'noFinalMix' : 'noFinalMixPlain'))
-    deductions++
+    const mismatch = ingredientIds.filter(id => id !== 'chili'
+      && !(id === 'cilantro' && order.noCilantro)
+      && !(id === 'mango' && order.extraMango && doseError(id) < 0)
+      && doseError(id))
+    for (const id of mismatch) {
+      const kind = doseError(id) < 0 ? 'missing' : 'extra'
+      track(kind, id)
+      problems.push(comment(kind, ingredients[id].short.toLocaleLowerCase('vi')))
+      deductions++
+    }
+    if (bowl.sequenceErrors) {
+      track('sequence')
+      problems.push(comment('uneven'))
+      deductions += Math.min(2, bowl.sequenceErrors)
+    }
+    if (!bowl.finalMixed) {
+      track('final-mix')
+      const hasToppings = ingredientIds.some(id => (ingredients[id].category === 'topping' || ingredients[id].category === 'crunch') && bowl.ingredients[id])
+      problems.push(comment(hasToppings ? 'noFinalMix' : 'noFinalMixPlain'))
+      deductions++
+    }
   }
   const patience = patienceLeft(state, customer)
   if (patience < 0.55) {
-    problems.push(comment('slow'))
+    track('slow')
+    if (!direct) problems.push(comment('slow'))
     deductions += patience < 0.25 ? 2 : 1
   }
 
-  if (order.pricey) return {
-    stars: deductions > 1 ? 1 : 2,
-    text: [comment('pricey'), problems[0]].filter(Boolean).join(' '),
-  }
-  const stars = Math.max(1, 5 - deductions) as Stars
-  if (problems.length) return { stars, text: problems.slice(0, 2).join(' ') }
+  if (order.pricey) track('price')
+  const stars = (order.pricey ? (deductions > 1 ? 1 : 2) : Math.max(1, 5 - deductions)) as Stars
+  if (direct) return result(stars, saltIssueLine(order.extra, issues, customer, state.reviews)
+    ?? comment(order.extra || order.extraMango || order.noCilantro ? 'saltCustom' : order.dish === 'salt' ? 'saltPraise' : 'praise'))
+  if (order.pricey) return result(stars, [comment('pricey'), ...problems.slice(0, 1)].join(' '))
+  if (problems.length) return result(stars, problems.slice(0, 2).join(' '))
 
-  const custom = order.extraMango || order.noCilantro || order.heat > 0
+  const custom = order.extraMango || order.noCilantro || (order.heat ?? 0) > 0
   const praise = priceBand(order.dish, order.price) === 'low' ? 'budget' : custom ? 'custom' : 'praise'
-  return { stars, text: comment(praise) }
+  return result(stars, comment(praise))
 }
 
 export function deliver(state: GameState): Result {
   const customer = currentCustomer(state)
   const bowl = state.shift?.bowl
-  if (!customer || !bowl || !canDeliver(state)) return problem('Trộn lần đầu và đóng gói trước khi giao.')
+  if (!customer || !bowl || !canDeliver(state)) return problem(usesDirectBowl(state) ? 'Đóng bịch trước khi giao.' : 'Trộn lần đầu và đóng gói trước khi giao.')
   const assessment = assessOrder(state, customer, bowl)
   const price = customer.order.price
   tallySale(state.tally, customer.order.dish, price, priceOf(bowl.ingredients))
@@ -312,24 +376,16 @@ export function deliver(state: GameState): Result {
   return { ...success(profiles[customer.profile].name + ' đã nhận món · ' + stars + ' ★'), departureText }
 }
 
-export function replyToReview(state: GameState, customerId: number, reply: ReplyId): Result {
-  const review = state.reviews.find(entry => entry.customerId === customerId)
-  if (!review || review.reply) return problem('Đánh giá này đã được phản hồi.')
-  review.reply = reply
-  if (review.stars <= 2) addExperience(state, 1)
-  return success(review.stars <= 2 ? 'Đã gửi phản hồi · +1 EXP.' : 'Đã gửi phản hồi.')
-}
-
 export function makeOrder(state: GameState, dish: MenuId, random: () => number): Order {
   const recipe = { ...menu[dish].recipe }
-  const heat = recipe.chili ? Math.floor(random() * 4) as Heat : 0
+  const heat = state.shift?.directBowl ? undefined : recipe.chili ? Math.floor(random() * 4) as Heat : 0
   const noCilantro = Boolean(recipe.cilantro && random() < 0.22)
   const extraMango = Boolean(recipe.mango && state.inventory.mango >= 2 && random() < 0.24)
-  if (!heat) delete recipe.chili
+  if (heat === 0) delete recipe.chili
   if (noCilantro) delete recipe.cilantro
   if (extraMango) recipe.mango = 2
   const price = state.menu[dish].price
-  return { dish, quantity: 1, price, recipe, heat, noCilantro, extraMango, pricey: priceBand(dish, price) === 'high' }
+  return { dish, quantity: 1, price, recipe, ...(heat !== undefined ? { heat } : {}), noCilantro, extraMango, pricey: priceBand(dish, price) === 'high' }
 }
 
 function makeCustomer(state: GameState, dish: MenuId, profile: number, random: () => number, visit?: HighlightVisit): Customer {
@@ -366,6 +422,14 @@ function makeCustomer(state: GameState, dish: MenuId, profile: number, random: (
       customer.storyStage = progress.stage
       customer.order.quantity = chapter.quantity
       progress.lastVisitDay = state.day
+    }
+  }
+  if (shift.directBowl && (!visit || visit.kind === 'group') && !currentLesson(state) && customer.storyStage === undefined) {
+    const extra = extraPortionIds.filter(id => customer.order.recipe[id] === 1 && state.inventory[id] >= customer.order.quantity * 2)
+    if (extra.length && random() < .30) {
+      const id = extra[Math.floor(random() * extra.length)]
+      customer.order.extra = id
+      customer.order.recipe[id] = 2
     }
   }
   customer.patienceMs += (customer.order.quantity - 1) * EXTRA_PORTION_PATIENCE_MS

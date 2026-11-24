@@ -4,8 +4,8 @@ import { ingredientIds } from '../src/data.ts'
 import { defaultPrice, fairPrice, money, priceBand, priceOf, sumReports } from '../src/economy.ts'
 import {
   addHeat, addIngredient, changePrice, CLOSE_MINUTE, closeShop, currentCustomer, deliver, finishMix, makeOrder, mixDuration,
-  mixProgress, newGame, nextDay, openShop, packBowl, PATIENCE_MS, purchase, replyToReview,
-  selectCustomer, tick, toggleDish, toggleMix, toggleStaff, trashBowl,
+  mixProgress, newGame, nextDay, openShop, packBowl, PATIENCE_MS, purchase,
+  selectCustomer, stirBowl, tick, toggleDish, toggleMix, toggleStaff, trashBowl,
 } from '../src/game.ts'
 import { parseSave } from '../src/storage.ts'
 import { departureLine } from '../src/reviews.ts'
@@ -168,7 +168,7 @@ test('rejects stockouts, protects the current order, and accounts for a timed-ou
   assert.equal(state.nextCustomerId, count)
 })
 
-test('price refusals and overpriced purchases create actionable reviews and a reply is counted once', () => {
+test('price refusals and overpriced purchases create actionable reviews', () => {
   const refusal = setUp()
   refusal.menu.salt.price = 16000
   start(refusal)
@@ -177,11 +177,6 @@ test('price refusals and overpriced purchases create actionable reviews and a re
   assert.equal(refusal.reviews[0].departureReason, 'priceRefusal')
   assert.match(departureLine(refusal.reviews[0]), /ví/)
   assert.deepEqual(parseSave(JSON.stringify(refusal)), refusal)
-  const customerId = refusal.reviews[0].customerId
-  assert.equal(replyToReview(refusal, customerId, 'voucher').ok, true)
-  assert.equal(refusal.reputation, 1)
-  assert.equal(replyToReview(refusal, customerId, 'polite').ok, false)
-  assert.equal(refusal.reputation, 1)
 
   const sale = setUp()
   sale.menu.salt.price = 16000
@@ -353,18 +348,14 @@ test('the first lesson retains its place in a save and waits without running dow
   advanceTutorial(state, 'read-order')
   assert.equal(lessonAllows(state, 'ingredient', 'rice'), true)
   for (const id of ['rice', 'kumquat', 'shrimpSalt'] as const) {
-    gather(state, [id])
+    assert.equal(addIngredient(state, id, { zone: 0, weights: [1, 1, 1, 1, 1, 1] }).ok, true)
     advanceTutorial(state, 'ingredient', id)
   }
-  toggleMix(state)
-  advanceTutorial(state, 'mix')
-  tick(state, 800, first)
   const resumed = parseSave(JSON.stringify(state))!
-  assert.equal(currentLesson(resumed)?.action, 'mix-ready')
-  tick(resumed, 1600, first)
-  assert.equal(currentLesson(resumed)?.action, 'final-mix')
-  finishMix(resumed)
-  advanceTutorial(resumed, 'final-mix')
+  assert.equal(currentLesson(resumed)?.action, 'stir-bowl')
+  assert.equal(stirBowl(resumed, 0), true)
+  advanceTutorial(resumed, 'stir-bowl')
+  assert.equal(currentLesson(resumed)?.action, 'pack')
   packBowl(resumed, 'bag')
   advanceTutorial(resumed, 'pack', 'bag')
   deliver(resumed)
@@ -472,7 +463,7 @@ test('the selected order’s tray and mixing highlights follow the bowl’s prog
   const render = (counterTab?: 'seasoning' | 'topping') => renderApp(state, {
     home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
     modal: null, counterTab,
-    heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+    reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
   })
   const cue = (action: string) => new RegExp('suggested-action" data-action="' + action + '"')
   assert.match(render(), /class="tray rice needed"/)
@@ -509,7 +500,7 @@ test('sidewalk customers keep their order, selection and accessible dialogue', (
   state.shift!.queue.push({ ...structuredClone(guest), id: guest.id + 1, profile: 2 })
   const html = renderApp(state, {
     home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: guest.id,
-    modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+    modal: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
   })
   const scene = html.slice(html.indexOf('class="queue-scene"'), html.indexOf('class="order-board"'))
   assert.match(scene, /src="\.\/art\/ganh\.webp"/)
@@ -534,7 +525,7 @@ test('waiting paper tickets stay between customers and preparation with their or
   gather(state, ['rice'])
   const html = renderApp(state, {
     home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
-    modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+    modal: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
   })
   assert.ok(html.indexOf('class="shop-front"') < html.indexOf('class="order-board"'))
   assert.ok(html.indexOf('class="order-board"') < html.indexOf('class="prep-workspace"'))
@@ -556,7 +547,7 @@ test('a topping-free order suggests the light mix immediately after the first mi
   const html = renderApp(state, {
     home: false, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
     modal: null,
-    heatOpen: false, replyFor: null, reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
+    reportPeriod: 'day', reportDay: 1, warning: '', departure: null,
   })
   assert.match(html, /suggested-action" data-action="final-mix"/)
   assert.doesNotMatch(html, /suggested-bank|Thêm topping ↓/)

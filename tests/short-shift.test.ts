@@ -4,7 +4,7 @@ import { ingredientIds, ingredients, levels, menuIds, profiles } from '../src/da
 import { createDailyActivity, currentShiftPhase, shiftNotice } from '../src/engagement.ts'
 import { priceOf, salesRevenue, sumReports } from '../src/economy.ts'
 import { addHeat, addIngredient, closeShop, currentCustomer, deliver, finishMix, mixDuration, newGame,
-  nextDay, openShop, packBowl, purchase, SHIFT_MS, tick, toggleMix } from '../src/game.ts'
+  nextDay, openShop, packBowl, purchase, SHIFT_MS, tick, toggleMix, usesDirectBowl } from '../src/game.ts'
 import { parseSave } from '../src/storage.ts'
 import { dialogContent, renderApp } from '../src/ui.ts'
 import type { GameState, Level, MenuId } from '../src/types.ts'
@@ -33,19 +33,21 @@ function firstGuest(state: GameState) {
 
 function cook(state: GameState, omitSalt = false) {
   const guest = currentCustomer(state)!
+  const direct = usesDirectBowl(state)
+  const placement = direct ? { zone: 0, weights: [1, 1, 1, 1, 1, 1] } : undefined
   for (const category of ['base', 'seasoning', 'topping', 'crunch']) {
     if (category === 'topping') {
-      assert.equal(toggleMix(state).ok, true)
+      if (!direct) assert.equal(toggleMix(state).ok, true)
       tick(state, mixDuration(state), () => .1)
     }
     for (const id of ingredientIds.filter(id => ingredients[id].category === category)) {
       for (let n = 0; n < (guest.order.recipe[id] ?? 0); n++) {
         if (omitSalt && id === 'shrimpSalt') continue
-        assert.equal((id === 'chili' ? addHeat(state, guest.order.heat) : addIngredient(state, id)).ok, true, id)
+        assert.equal((id === 'chili' && !direct ? addHeat(state, guest.order.heat!) : addIngredient(state, id, placement)).ok, true, id)
       }
     }
   }
-  assert.equal(finishMix(state).ok, true)
+  if (!direct) assert.equal(finishMix(state).ok, true)
   assert.equal(packBowl(state, 'bag').ok, true)
   return deliver(state)
 }
@@ -62,7 +64,7 @@ function reachHighlight(state: GameState, random = () => .1) {
 test('short policy boundaries, countdown, gentle day one and tutorial all use played time', () => {
   assert.equal(SHIFT_MS, 105000)
   const state = start()
-  assert.equal(state.version, 7)
+  assert.equal(state.version, 9)
   assert.equal(state.dayRules, 'short-105')
   for (const [time, phase, factor] of [[0, 'warmup', 1.3], [9999, 'warmup', 1.3], [10000, 'normal', 1],
     [29999, 'normal', 1], [30000, 'rush', .6], [44999, 'rush', .6], [45000, 'rest', 0],
@@ -356,7 +358,7 @@ test('hard and manual endings keep full costs and waste only the unfinished port
     cook(state)
     state.shift!.elapsedMs = 104999
     guest.arrivalMs = 90000
-    addIngredient(state, 'rice')
+    assert.equal(addIngredient(state, 'rice', { zone: 0, weights: [0, 0, 0, 0, 0, 0] }).ok, true)
     const bowlCost = priceOf(state.shift!.bowl.ingredients)
     const cash = state.cash
     if (manual) closeShop(state)
@@ -384,7 +386,7 @@ test('cash reconciles with profit and remaining inventory across a legacy day an
   state.daily = createDailyActivity(1, 1, 'legacy-240')
   let openingCash = state.cash
   for (let day = 1; day <= 3; day++) {
-    if (state.inventory.rice < 5) assert.equal(purchase(state, 'rice').ok, true)
+    if (state.inventory.rice < 7) assert.equal(purchase(state, 'rice').ok, true)
     for (const id of ['shrimpSalt', 'kumquat', 'pack'] as const) {
       if (state.inventory[id] < 5) assert.equal(purchase(state, id).ok, true)
     }
@@ -397,7 +399,7 @@ test('cash reconciles with profit and remaining inventory across a legacy day an
       if (n === 1) currentCustomer(state)!.order.quantity = 3
       cook(state)
     }
-    addIngredient(state, 'rice')
+    assert.equal(addIngredient(state, 'rice', { zone: 0, weights: [0, 0, 0, 0, 0, 0] }).ok, true)
     closeShop(state)
     const report = state.reports.at(-1)!
     assert.equal(report.revenue, salesRevenue(report) + report.tips)
@@ -527,7 +529,7 @@ test('v1–5 shifts beyond 105 seconds remain loadable and keep the original fou
 
 test('preparation stays concise, help explains the rules and reports explain their ending', () => {
   const options = { home: false, initialMute: false, prepTab: 'market' as const, previousCustomers: new Set<number>(), customerSpeechId: null,
-    modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day' as const, reportDay: 2, warning: '', departure: null }
+    modal: null, reportPeriod: 'day' as const, reportDay: 2, warning: '', departure: null }
   const state = stocked()
   assert.doesNotMatch(renderApp(state, options), /Ca tối đa|Ngừng đón khách/)
   assert.match(dialogContent(state, { ...options, modal: 'help' }), /1:45/)

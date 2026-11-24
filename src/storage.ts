@@ -1,4 +1,5 @@
 import { engagementRules, ingredientIds, menuIds, profiles, regularStories, shiftPolicies } from './data.ts'
+import { bowlZones, emptyZones, extraPortionIds, isSeasoning } from './coating.ts'
 import { salesRevenue } from './economy.ts'
 import { createDailyActivity, createStories } from './engagement.ts'
 import { CLOSE_MINUTE, OPEN_MINUTE } from './game.ts'
@@ -21,6 +22,38 @@ function timer(value: unknown): value is number {
 
 function recipe(value: unknown): boolean {
   return object(value) && Object.entries(value).every(([key, count]) => ingredientIds.some(id => id === key) && integer(count))
+}
+
+function orderExtra(order: Record<string, unknown>): boolean {
+  return order.extra === undefined || (object(order.recipe)
+    && extraPortionIds.some(id => id === order.extra && (order.recipe as Record<string, unknown>)[id] === 2))
+}
+
+function portionDetails(value: unknown): boolean {
+  return object(value) && recipe(value.recipe) && integer(value.heat, 0, 3) && Array.isArray(value.issues)
+    && value.issues.every(issue => object(issue) && ['missing', 'extra', 'uneven', 'heat', 'soggy', 'sequence', 'final-mix', 'slow', 'price'].includes(String(issue.kind))
+      && (issue.ingredient === undefined || ingredientIds.some(id => id === issue.ingredient)))
+}
+
+function reviewDetails(value: unknown): boolean {
+  if (!object(value) || !object(value.order) || !Array.isArray(value.portions)) return false
+  const { order, portions } = value
+  return menuIds.some(id => id === order.dish) && recipe(order.recipe) && orderExtra(order) && (order.heat === undefined || integer(order.heat, 0, 3))
+    && typeof order.extraMango === 'boolean' && typeof order.noCilantro === 'boolean' && integer(order.quantity, 1, 3)
+    && portions.length <= order.quantity && portions.some(portion => portion !== null)
+    && portions.every(portion => portion === null || portionDetails(portion))
+}
+
+function validCoating(value: unknown, used: Record<string, unknown>): boolean {
+  const coatedIds = ingredientIds.filter(id => id !== 'rice' && id !== 'pack')
+  if (!object(value) || !Object.keys(value).every(key => coatedIds.some(id => id === key))) return false
+  return coatedIds.every(id => {
+    const zones = value[id]
+    if (zones === undefined) return !used[id]
+    return Array.isArray(zones) && zones.length === bowlZones && zones.every(timer)
+      && (isSeasoning(id) || zones.every(dose => Number.isInteger(dose)))
+      && Math.abs(zones.reduce((sum, dose) => sum + dose, 0) - Number(used[id] ?? 0)) < 1e-6
+  })
 }
 
 function tally(value: unknown, version: number): value is Record<string, unknown> {
@@ -77,10 +110,12 @@ function validShift(value: unknown, version: number, rulesId: DayRulesId): boole
     && integer(guest.profile, 0, profiles.length - 1)
     && timer(guest.arrivalMs) && timer(guest.patienceMs) && guest.patienceMs > 0
     && object(guest.order) && menuIds.some(id => id === (guest.order as Record<string, unknown>).dish)
-    && recipe(guest.order.recipe) && integer(guest.order.price, 1000) && integer(guest.order.heat, 0, 3)
+    && recipe(guest.order.recipe) && orderExtra(guest.order) && integer(guest.order.price, 1000)
+    && (version >= 9 && value.directBowl === true ? guest.order.heat === undefined : integer(guest.order.heat, 0, 3))
     && (version < 5 || (integer(guest.order.quantity, 1, 3) && Array.isArray(guest.servedPortions)
       && guest.servedPortions.length < guest.order.quantity
-      && guest.servedPortions.every(portion => object(portion) && integer(portion.stars, 1, 5) && typeof portion.text === 'string')))
+      && guest.servedPortions.every(portion => object(portion) && integer(portion.stars, 1, 5) && typeof portion.text === 'string'
+        && (portion.details === undefined || portionDetails(portion.details)))))
     && (version < 6 || ((guest.storyStage === undefined || (integer(guest.storyStage, 0, 2)
       && Boolean(regularStories[Number(guest.profile)])))
       && (guest.special === undefined || (guest.profile === engagementRules.specialProfile && guest.order.quantity === 1 && guest.storyStage === undefined
@@ -88,7 +123,13 @@ function validShift(value: unknown, version: number, rulesId: DayRulesId): boole
     && ['noCilantro', 'extraMango', 'pricey'].every(flag => typeof (guest.order as Record<string, unknown>)[flag] === 'boolean'))
   const { bowl } = value
   return validGuests && (value.activeId === null ? value.queue.length === 0 : value.queue.some(guest => guest.id === value.activeId))
-    && recipe(bowl.ingredients) && integer(bowl.heat, 0, 3) && timer(bowl.mixMs) && bowl.mixMs <= 2400
+    && (value.directSalt === undefined || (version === 8 && value.directSalt === true))
+    && (value.directBowl === undefined || (version >= 9 && value.directBowl === true))
+    && recipe(bowl.ingredients) && object(bowl.ingredients)
+    && (bowl.coating === undefined || ((value.directSalt === true || value.directBowl === true) && validCoating(bowl.coating, bowl.ingredients)))
+    && (bowl.evenCuePlayed === undefined || (bowl.coating !== undefined && bowl.evenCuePlayed === true))
+    && (bowl.crunchFolds === undefined || (value.directBowl === true && integer(bowl.crunchFolds, 1, 3)))
+    && integer(bowl.heat, 0, 3) && timer(bowl.mixMs) && bowl.mixMs <= 2400
     && ['mixing', 'finalMixed', 'soggy'].every(flag => typeof bowl[flag] === 'boolean')
     && integer(bowl.sequenceErrors) && (bowl.pack === null || bowl.pack === 'bag')
 }
@@ -98,10 +139,36 @@ type LegacyGame = Omit<GameState, 'version' | 'dayRules' | 'daily' | 'reports'> 
   daily: { day: number; missions: DailyMission[]; special: { atMs: number; kind: SpecialKind; status: HighlightVisit['status'] } | null } | null
   reports: Array<Omit<DailyReport, 'endReason'>>
 }
-type SavedGame = GameState | LegacyGame
+type PreviousGame = Omit<GameState, 'version' | 'shift'> & {
+  version: 7 | 8
+  shift: (NonNullable<GameState['shift']> & { directSalt?: true }) | null
+}
+type SavedGame = GameState | PreviousGame | LegacyGame
+
+function upgradeDirectBowl(state: PreviousGame): GameState {
+  const shift = state.shift
+  if (!shift?.directSalt) return { ...state, version: 9 }
+  delete shift.directSalt
+  shift.directBowl = true
+  for (const guest of shift.queue) delete guest.order.heat
+  const bowl = shift.bowl
+  bowl.mixing = false
+  for (const id of ingredientIds) {
+    if (id === 'rice' || id === 'pack') continue
+    const dose = bowl.ingredients[id] ?? 0
+    if (!dose || bowl.coating?.[id]) continue
+    // The old bowl did not track placement. Credit ingredients already paid for.
+    const zones = emptyZones()
+    if (isSeasoning(id)) zones.fill(dose / bowlZones)
+    else zones[0] = dose
+    const coating = bowl.coating ??= {}
+    coating[id] = zones
+  }
+  return { ...state, version: 9 }
+}
 
 function validSave(value: unknown): value is SavedGame {
-  if (!object(value) || !integer(value.version, 1, 7)
+  if (!object(value) || !integer(value.version, 1, 9)
     || !validTutorialStep(value.tutorialStep, value.version) || !integer(value.day, 1) || !integer(value.level, 1, 4)
     || !integer(value.cash, Number.MIN_SAFE_INTEGER) || !integer(value.reputation) || !integer(value.nextCustomerId, 1)
     || typeof value.staff !== 'boolean' || typeof value.muted !== 'boolean' || !tally(value.tally, value.version)) return false
@@ -124,6 +191,7 @@ function validSave(value: unknown): value is SavedGame {
     || !reviews.every(review => object(review) && integer(review.customerId, 1)
       && integer(review.profile, 0, profiles.length - 1) && integer(review.day, 1)
       && integer(review.stars, 1, 5) && typeof review.text === 'string'
+      && (review.details === undefined || reviewDetails(review.details))
       && (review.departureReason === undefined || ['priceRefusal', 'timeout', 'closed'].some(reason => review.departureReason === reason))
       && (review.reply === undefined || ['polite', 'friendly', 'voucher'].some(id => review.reply === id)))) return false
   if (phase === 'shop') return validShift(shift, value.version, rulesId)
@@ -138,12 +206,13 @@ export function parseSave(raw: string): GameState | null {
       parsed.shift.bowl.pack = 'bag'
     }
     if (!validSave(parsed)) return null
-    if (parsed.version === 7) return parsed
+    if (parsed.version === 9) return parsed
+    if (parsed.version === 7 || parsed.version === 8) return upgradeDirectBowl(parsed)
     // Older builds credited sales when the day closed. Only open shifts have unpaid sales.
     const pendingRevenue = parsed.version === 1 && parsed.phase === 'shop' ? salesRevenue(parsed.tally) : 0
     const oldHighlight = parsed.version === 6 ? parsed.daily?.special : null
     const upgraded: GameState = {
-      ...parsed, version: 7, dayRules: parsed.phase === 'prep' ? 'short-105' : 'legacy-240', cash: parsed.cash + pendingRevenue,
+      ...parsed, version: 9, dayRules: parsed.phase === 'prep' ? 'short-105' : 'legacy-240', cash: parsed.cash + pendingRevenue,
       daily: parsed.phase === 'prep' ? createDailyActivity(parsed.day, parsed.level) : null,
       stories: parsed.version === 6 ? parsed.stories : createStories(),
       tally: parsed.version === 6 ? parsed.tally : { ...parsed.tally, completedOrders: 0, tips: 0, xpEarned: 0 },

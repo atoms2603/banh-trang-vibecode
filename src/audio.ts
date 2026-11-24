@@ -1,4 +1,9 @@
-type Effect = 'tap' | 'serve'
+type Effect = 'tap' | 'serve' | 'even'
+
+const riceSounds = [
+  new URL('../sound/sfx/paper-rice-mixed-1.mp3', import.meta.url).href,
+  new URL('../sound/sfx/paper-rice-mixed-2.mp3', import.meta.url).href,
+]
 
 let context: AudioContext | undefined
 let music: HTMLAudioElement | undefined
@@ -8,6 +13,29 @@ let mixing = false
 let nextMixTrack = 0
 let activeMixTrack: HTMLAudioElement | undefined
 let mixRequest = 0
+let foldTrack: HTMLAudioElement | undefined
+let foldStop = 0
+let nextFold = 0
+
+export function stopFoldSound(): void {
+  if (foldStop) window.clearTimeout(foldStop)
+  foldStop = 0
+  foldTrack?.pause()
+}
+
+export function foldSound(muted: boolean): void {
+  if (muted || document.hidden || foldStop) return
+  try {
+    foldTrack ??= document.createElement('audio')
+    foldTrack.volume = .5
+    const index = nextFold++
+    foldTrack.src = riceSounds[index % riceSounds.length]
+    void foldTrack.play().catch(() => { if (nextFold === index + 1) stopFoldSound() })
+    foldStop = window.setTimeout(stopFoldSound, 280)
+  } catch {
+    stopFoldSound()
+  }
+}
 
 function playMixTrack(): void {
   if (!mixing || !mixTracks) return
@@ -35,10 +63,7 @@ export function mixingSound(active: boolean, muted: boolean, hidden = document.h
       }
       return
     }
-    mixTracks ??= [
-      new URL('../sound/sfx/paper-rice-mixed-1.mp3', import.meta.url).href,
-      new URL('../sound/sfx/paper-rice-mixed-2.mp3', import.meta.url).href,
-    ].map((src, index) => {
+    mixTracks ??= riceSounds.map((src, index) => {
       const track = document.createElement('audio')
       track.id = `mix-sfx-${index + 1}`
       track.src = src
@@ -93,7 +118,7 @@ export function sound(effect: Effect, muted: boolean): void {
     context ??= new AudioContext()
     const audio = context
     if (audio.state === 'suspended') void audio.resume().catch(() => {})
-    const melody = effect === 'serve' ? [659, 784, 1046] : [480]
+    const melody = effect === 'serve' ? [659, 784, 1046] : effect === 'even' ? [659, 880] : [480]
     const beat = effect === 'serve' ? 0.085 : 0.073
     melody.forEach((pitch, index) => {
       const start = audio.currentTime + index * beat

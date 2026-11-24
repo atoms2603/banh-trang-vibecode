@@ -1,4 +1,4 @@
-import type { Ingredient, IngredientId, Level, MarketPack, MenuId, MenuItem, MissionKind, ReplyId, Reward, SpecialKind, StoryChapter } from './types.ts'
+import type { Ingredient, IngredientId, Level, MarketPack, MenuId, MenuItem, MissionKind, Reward, SpecialKind, StoryChapter } from './types.ts'
 
 export const ingredients: Record<IngredientId, Ingredient> = {
   rice:       { name: 'Bánh tráng cắt sợi', short: 'Bánh tráng', level: 1, category: 'base', cost: 2000 },
@@ -121,7 +121,7 @@ export const missionLabels: Record<MissionKind, { short: string; detail: string 
 
 export const specialChallenges: Record<SpecialKind, Reward & { label: string; detail: string }> = {
   perfect: { label: 'Phần bánh hoàn hảo', detail: 'Làm một bịch đạt 5 sao.', cash: 5000, xp: 5 },
-  crispy: { label: 'Topping giòn', detail: 'Đủ topping giòn, thêm sau trộn đầu, trộn nhẹ và đạt từ 4 sao.', cash: 4000, xp: 4 },
+  crispy: { label: 'Topping giòn', detail: 'Rắc đủ đậu phộng hoặc hành phi sau cùng, giữ giòn và đạt từ 4 sao.', cash: 4000, xp: 4 },
 }
 
 export const regularStories: Record<number, { title: string; chapters: readonly StoryChapter[] }> = {
@@ -151,9 +151,3 @@ export const profiles = [
   { name: 'Minh Khoa', role: 'Sinh viên', line: 'Chua chua cay cay là đúng bài!', tint: '#86adb7', skin: '#ebbd9e', hair: '#48382e', style: 'student' },
   { name: 'Cô Sáu', role: 'Khách trong xóm', line: 'Bán cho cô một bịch nha con.', tint: '#e8a489', skin: '#dfac88', hair: '#755748', style: 'neighbor' },
 ]
-
-export const replies: Record<ReplyId, { label: string; text: string }> = {
-  polite: { label: 'Lịch sự, cầu thị', text: 'Tiệm cảm ơn bạn đã góp ý. Tụi mình sẽ chú ý hơn ở phần tiếp theo nha.' },
-  friendly: { label: 'Hài hước, thân thiện', text: 'Tiệm ghi ngay vào sổ tay rồi. Hẹn bạn một bịch ngon hơn lần sau nha!' },
-  voucher: { label: 'Tặng voucher xin lỗi', text: 'Tiệm gửi bạn voucher xin lỗi cho lần ghé sau. Cảm ơn bạn đã cho tiệm cơ hội nhé!' },
-}

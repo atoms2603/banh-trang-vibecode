@@ -3,21 +3,25 @@ import '@fontsource-variable/nunito'
 import './styles.css'
 import './counter.css'
 
-import { backgroundMusic, mixingSound, sound } from './audio.ts'
+import { backgroundMusic, foldSound, mixingSound, sound, stopFoldSound } from './audio.ts'
 import { food, icon } from './art.ts'
-import { ingredientIds, ingredients, menuIds, replies } from './data.ts'
+import { coatingLabel, paintBowlFood } from './bowl-view.ts'
+import type { BowlFlip, BowlPreview } from './bowl-view.ts'
+import { bowlZone, emptyZones, isSeasoning, seasoningIds, seasoningsReady, traceBowl, wrapZone } from './coating.ts'
+import type { BowlPoint } from './coating.ts'
+import { ingredientIds, ingredients, menuIds } from './data.ts'
 import { money } from './economy.ts'
 import {
   addHeat, addIngredient, changePrice, closeShop, currentCustomer, deliver, finishMix, mixProgress, newGame,
-  nextDay, openShop, packBowl, purchase, replyToReview, selectCustomer, tick,
-  toggleDish, toggleMix, toggleStaff, trashBowl,
+  nextDay, openShop, packBowl, purchase, selectCustomer, stirBowl, tick,
+  toggleDish, toggleMix, toggleStaff, trashBowl, usesDirectBowl,
 } from './game.ts'
 import { departureLine } from './reviews.ts'
 import { loadGame, saveGame } from './storage.ts'
 import { advanceTutorial, currentLesson, lessonAllows } from './tutorial.ts'
 import { dialogContent, renderApp, updateClocks } from './ui.ts'
 import type { Modal, ScreenOptions } from './ui.ts'
-import type { GameState, Heat, IngredientId, ReplyId } from './types.ts'
+import type { GameState, IngredientId } from './types.ts'
 import { counterTabs, ingredientPage, ingredientTab, initialCounterTab } from './counter.ts'
 import type { CounterTab } from './counter.ts'
 
@@ -43,7 +47,7 @@ const loaded = loadGame()
 let state = loaded.game
 const options: ScreenOptions = {
   home: true, initialMute: false, prepTab: 'market', previousCustomers: new Set(), customerSpeechId: null,
-  modal: null, heatOpen: false, replyFor: null,
+  modal: null,
   reportPeriod: 'day', reportDay: state?.reports.at(-1)?.day ?? 1, warning: loaded.warning,
   departure: null,
   counterTab: state ? initialCounterTab(state) : 'seasoning', trayPages: {},
@@ -54,7 +58,12 @@ let lastPaint = 0
 let lastSave = 0
 let flashTimer = 0
 let departureTimer = 0
-let drag: { pointerId: number; id: IngredientId; x: number; y: number; ghost: HTMLElement | null } | null = null
+let drag: { pointerId: number; id: IngredientId; x: number; y: number; ghost: HTMLElement | null; weights?: number[]; last?: BowlPoint } | null = null
+let stir: { pointerId: number; last: BowlPoint; distance: number; moved: boolean } | null = null
+let bowlKeys: { id: IngredientId; weights: number[] } | null = null
+let keyZone = 0
+let bowlFrame = 0
+let bowlFlip: BowlFlip | undefined
 let queueDrag: { pointerId: number; x: number; scrollLeft: number; moved: boolean } | null = null
 let suppressClickUntil = 0
 let mixHold: { pointerId: number; timer: number } | null = null
@@ -92,12 +101,11 @@ function persist(): boolean {
   return true
 }
 
-function restoreFocus(root: HTMLElement, target: { action?: string; id?: string; value?: string }): void {
+function restoreFocus(root: HTMLElement, target: { action?: string; id?: string }): void {
   if (!target.action) return
   const buttons = root.querySelectorAll<HTMLButtonElement>('button[data-action]')
   for (const button of buttons) {
-    if (button.dataset.action !== target.action || button.dataset.id !== target.id
-      || (target.value && button.dataset.value !== target.value) || button.disabled) continue
+    if (button.dataset.action !== target.action || button.dataset.id !== target.id || button.disabled) continue
     button.focus({ preventScroll: true })
     return
   }
@@ -150,14 +158,15 @@ function renderTutorial(): void {
   // The customer card still moves during its entrance, so its bounds are not ready yet.
   const priceStepper = lesson.action === 'price' ? screen.querySelector<HTMLElement>(`[data-price-for="${lesson.id}"]`) : null
   const orderPanel = lesson.action === 'read-order' ? screen.querySelector<HTMLElement>('.order-details') : null
-  const target = orderPanel ?? button ?? priceStepper ?? (lesson.action === 'mix-ready' ? screen.querySelector<HTMLElement>('.mix-meter') : null)
+  const target = orderPanel ?? button ?? priceStepper ?? (lesson.action === 'mix-ready' ? screen.querySelector<HTMLElement>('.mix-meter')
+    : lesson.action === 'stir-bowl' ? screen.querySelector<HTMLElement>('[data-direct-bowl]') : null)
   if (!target) return
 
   const reveal = () => {
     if (!target.isConnected) return
     for (const control of allowed) control.inert = false
     const focusTarget = orderPanel && button ? button : priceStepper?.querySelector<HTMLButtonElement>('[data-action="price-up"]') ?? target
-    if (!button && !priceStepper) target.tabIndex = -1
+    if (!button && !priceStepper && lesson.action !== 'stir-bowl') target.tabIndex = -1
     tutorialTarget = target
     focusTarget.setAttribute('aria-describedby', instruction.id)
     if (priceStepper) for (const control of allowed) control.setAttribute('aria-describedby', instruction.id)
@@ -233,7 +242,7 @@ function resizeLayout(): void {
 function renderScreen(move = false): void {
   if (closing) return
   syncMixingSound()
-  if (drag?.ghost && !move) {
+  if ((drag?.ghost || stir) && !move) {
     deferredRender = true
     return
   }
@@ -259,6 +268,7 @@ function renderScreen(move = false): void {
   const previousViewport = screen.querySelector<HTMLElement>('.queue-viewport')
   const queueScroll = previousViewport?.scrollLeft ?? 0
   const queueFocused = previousViewport === document.activeElement
+  const bowlFocused = document.activeElement?.hasAttribute?.('data-direct-bowl')
   const shopScroll = screen.querySelector<HTMLElement>('.shop-screen')?.scrollTop ?? 0
   const previousDetails = screen.querySelector<HTMLElement>('.order-details')
   const detailScroll = previousDetails?.scrollTop ?? 0
@@ -289,6 +299,8 @@ function renderScreen(move = false): void {
   renderTutorial()
   updateLayout()
   if (!move && queueFocused) viewport?.focus({ preventScroll: true })
+  if (!move && bowlFocused && (!lesson || lesson.action === 'stir-bowl')) screen.querySelector<HTMLElement>('[data-direct-bowl]')?.focus({ preventScroll: true })
+  if (bowlKeys) paintBowl()
 }
 
 function renderModal(): void {
@@ -313,12 +325,12 @@ function renderModal(): void {
 }
 
 function showModal(name: Modal): void {
+  if (name) cancelBowlInput()
   if (name && !options.modal && document.activeElement instanceof HTMLButtonElement) {
     modalTrigger = { ...document.activeElement.dataset }
   }
   options.modal = name
   syncMixingSound()
-  options.replyFor = null
   lastFrame = performance.now()
   if (persist()) renderScreen()
   renderModal()
@@ -337,7 +349,6 @@ function beginGame(): void {
   options.home = false
   options.prepTab = 'market'
   options.customerSpeechId = null
-  options.heatOpen = false
   options.reportDay = 1
   options.reportPeriod = 'day'
   options.departure = null
@@ -392,16 +403,13 @@ function changeReport(delta: number): void {
   else renderScreen()
 }
 
-function chooseIngredient(id: IngredientId): void {
+function chooseIngredient(id: IngredientId, placement?: { weights: number[]; zone: number }): void {
   if (!state || !lessonAllows(state, 'ingredient', id)) return
-  if (id === 'chili') {
-    options.heatOpen = !options.heatOpen
-    renderScreen()
-    return
-  }
-  const result = addIngredient(state, id)
+  const result = id === 'chili' && !usesDirectBowl(state)
+    ? addHeat(state, currentCustomer(state)?.order.heat || 1) : addIngredient(state, id, placement)
   if (result.ok) {
     advanceTutorial(state, 'ingredient', id)
+    playEvenCue()
     persist()
   }
   flash(result.message, result.ok)
@@ -409,6 +417,7 @@ function chooseIngredient(id: IngredientId): void {
 }
 
 function showReport(game: GameState): void {
+  cancelBowlInput()
   options.reportDay = game.day
   options.reportPeriod = 'day'
   if (options.modal) showModal(null)
@@ -418,6 +427,7 @@ function showReport(game: GameState): void {
 
 function showClosingNotice(game: GameState): void {
   closing = true
+  cancelBowlInput()
   queueDrag = null
   window.clearTimeout(flashTimer)
   window.clearTimeout(departureTimer)
@@ -450,7 +460,7 @@ function showClosingNotice(game: GameState): void {
 
 function handle(button: HTMLButtonElement): void {
   if (closing) return
-  const { action: buttonAction, id, value } = button.dataset
+  const { action: buttonAction, id } = button.dataset
   const action = actionOf(button)
   if (!action || action === 'brand' || (!options.home && !lessonAllows(state, action, id))) return
   if (action === 'queue-scroll') {
@@ -476,6 +486,7 @@ function handle(button: HTMLButtonElement): void {
       state.muted = !state.muted
       persist()
     } else options.initialMute = !options.initialMute
+    if (muted()) stopFoldSound()
     backgroundMusic(muted())
     sound('tap', muted())
     renderScreen()
@@ -486,7 +497,6 @@ function handle(button: HTMLButtonElement): void {
 
   if (action === 'counter-tab' && id && Object.hasOwn(counterTabs, id)) {
     options.counterTab = id as CounterTab
-    options.heatOpen = false
     renderScreen()
     return
   }
@@ -527,20 +537,6 @@ function handle(button: HTMLButtonElement): void {
     return
   }
   if (action === 'report-prev' || action === 'report-next') return changeReport(action === 'report-prev' ? -1 : 1)
-  if (action === 'reply-toggle') {
-    options.replyFor = options.replyFor === Number(id) ? null : Number(id)
-    renderModal()
-    return
-  }
-  if (action === 'reply' && value && Object.hasOwn(replies, value)) {
-    const result = replyToReview(state, Number(id), value as ReplyId)
-    options.replyFor = null
-    persist()
-    renderScreen()
-    flash(result.message, result.ok)
-    renderModal()
-    return
-  }
   if (action === 'prep-market' || action === 'prep-menu') {
     options.prepTab = action === 'prep-market' ? 'market' : 'menu'
     if (currentLesson(state)) {
@@ -551,6 +547,7 @@ function handle(button: HTMLButtonElement): void {
     return
   }
   const ingredient = ingredientIds.find(key => key === id)
+  if (action === 'ingredient' && usesDirectBowl(state)) return
   if (action === 'ingredient' && ingredient) return chooseIngredient(ingredient)
   if (action === 'order-ingredient' && ingredient) return flash(ingredients[ingredient].name)
   const dish = menuIds.find(key => key === id)
@@ -572,7 +569,6 @@ function handle(button: HTMLButtonElement): void {
     case 'open':
       result = openShop(state)
       if (result.ok) {
-        options.heatOpen = false
         options.departure = null
         options.counterTab = 'seasoning'
         options.trayPages = {}
@@ -584,25 +580,20 @@ function handle(button: HTMLButtonElement): void {
       const customerId = Number(id)
       result = selectCustomer(state, customerId)
       if (result.ok) {
+        if (guest?.id !== customerId) cancelBowlInput()
         if (buttonAction === 'customer') options.customerSpeechId = customerId
         else if (guest?.id !== customerId) options.customerSpeechId = null
-        if (guest?.id !== customerId) options.heatOpen = false
         if (guest?.id !== customerId) { options.counterTab = 'seasoning'; options.trayPages = {} }
       }
       break
     }
-    case 'heat':
-      if (['0', '1', '2', '3'].includes(id ?? '')) result = addHeat(state, Number(id) as Heat)
-      options.heatOpen = false
-      break
-    case 'mix': result = toggleMix(state); options.heatOpen = false; break
+    case 'mix': result = toggleMix(state); break
     case 'final-mix':
       result = finishMix(state)
       break
     case 'pack': if (id === 'bag') result = packBowl(state, id); break
     case 'trash':
       result = trashBowl(state)
-      if (result.ok) options.heatOpen = false
       if (result.ok) { options.counterTab = 'seasoning'; options.trayPages = {} }
       break
     case 'deliver':
@@ -611,7 +602,6 @@ function handle(button: HTMLButtonElement): void {
         payment = state.cash - cashBefore
         sound('serve', muted())
         if (guest.servedPortions.length === guest.order.quantity) announceDeparture(guest.profile, result.departureText ?? 'Đã nhận đủ món!', result.departureText ? 3500 : 1700)
-        options.heatOpen = false
         options.counterTab = 'seasoning'
         options.trayPages = {}
       }
@@ -641,10 +631,22 @@ function handle(button: HTMLButtonElement): void {
   if (payment !== undefined) showPayment(payment, paymentOrigin)
 }
 
+function armBowlIngredient(button: HTMLButtonElement): void {
+  const id = ingredientIds.find(key => key === button.dataset.id)
+  if (!state || closing || options.modal || button.disabled || !id || !lessonAllows(state, 'ingredient', id)) return
+  bowlKeys = { id, weights: emptyZones() }
+  screen.querySelector<HTMLElement>('[data-direct-bowl]')?.focus({ preventScroll: true })
+  paintBowl()
+}
+
 app.addEventListener('click', event => {
   if (!(event.target instanceof Element)) return
   const button = event.target.closest<HTMLButtonElement>('button[data-action]')
   if (!button || button.disabled) return
+  if (state && usesDirectBowl(state) && button.dataset.action === 'ingredient') {
+    if (event.detail === 0) armBowlIngredient(button)
+    return
+  }
   if (event.detail > 0 && (
     button.dataset.action === 'ingredient' && performance.now() < suppressClickUntil
     || button.dataset.action === 'mix' && performance.now() < suppressMixClickUntil
@@ -652,7 +654,113 @@ app.addEventListener('click', event => {
   handle(button)
 })
 
+modalRoot.addEventListener('change', event => {
+  if (!(event.target instanceof HTMLSelectElement) || !event.target.hasAttribute('data-review-portion')) return
+  const selected = event.target.value
+  for (const portion of event.target.closest('.review-order')?.querySelectorAll<HTMLElement>('[data-portion-index]') ?? []) {
+    portion.hidden = portion.dataset.portionIndex !== selected
+  }
+})
+
+function bowlPoint(x: number, y: number): BowlPoint | null {
+  const bounds = screen.querySelector('[data-direct-surface]')?.getBoundingClientRect()
+  if (!bounds?.width) return null
+  const radius = bounds.width * .43
+  return { x: (x - bounds.left - bounds.width / 2) / radius, y: (y - bounds.top - bounds.height / 2) / radius }
+}
+
+function playEvenCue(): void {
+  if (!state || !usesDirectBowl(state)) return
+  const bowl = state.shift?.bowl, order = currentCustomer(state)?.order
+  if (!bowl || !order || bowl.evenCuePlayed || !seasoningIds.some(id => order.recipe[id]) || !seasoningsReady(bowl, order.recipe)) return
+  bowl.evenCuePlayed = true
+  sound('even', muted())
+}
+
+function paintBowl(): void {
+  if (bowlFrame) return
+  bowlFrame = requestAnimationFrame(() => {
+    bowlFrame = 0
+    const svg = screen.querySelector('[data-direct-surface]')
+    if (!svg || closing || !state || !usesDirectBowl(state)) return
+    const pending = drag?.weights ? { id: drag.id, weights: drag.weights } : bowlKeys
+    const preview: BowlPreview | undefined = pending && isSeasoning(pending.id)
+      ? { id: pending.id, weights: pending.weights } : undefined
+    const bowl = state.shift?.bowl
+    const food = svg.querySelector('[data-bowl-food]')!
+    paintBowlFood(food, bowl, preview, bowlFlip)
+    bowlFlip = undefined
+    const cursor = svg.querySelector('[data-bowl-cursor]')!
+    cursor.setAttribute('visibility', bowlKeys ? 'visible' : 'hidden')
+    cursor.setAttribute('cx', String(53 * Math.cos(keyZone * Math.PI / 3)))
+    cursor.setAttribute('cy', String(53 * Math.sin(keyZone * Math.PI / 3)))
+    const status = screen.querySelector('#bowl-status')
+    const label = bowlKeys ? `Đang cầm ${ingredients[bowlKeys.id].short} · Enter để thả` : coatingLabel(bowl, currentCustomer(state)?.order.recipe)
+    if (status && status.textContent !== label) status.textContent = label
+  })
+}
+
+function foldAt(zone: number, dx: number, dy: number): boolean {
+  if (!state || (!lessonAllows(state, 'stir-bowl') && currentLesson(state)?.action !== 'pack') || !stirBowl(state, zone)) return false
+  bowlFlip = { zone, dx, dy }
+  foldSound(muted())
+  playEvenCue()
+  paintBowl()
+  return true
+}
+
+function cancelBowlInput(): void {
+  const hadInput = Boolean(drag?.weights || stir || bowlKeys)
+  if (drag?.weights) { drag.ghost?.remove(); drag = null }
+  if (stir) {
+    if (screen.hasPointerCapture(stir.pointerId)) screen.releasePointerCapture(stir.pointerId)
+    stir = null
+  }
+  bowlKeys = null
+  bowlFlip = undefined
+  stopFoldSound()
+  if (bowlFrame) cancelAnimationFrame(bowlFrame)
+  bowlFrame = 0
+  screen.querySelector('.direct-bowl.drop-ready')?.classList.remove('drop-ready')
+  if (hadInput && !closing) paintBowl()
+}
+
+function handleBowlKey(event: KeyboardEvent): void {
+  if (!state || closing || options.modal) return
+  if (event.key === 'Escape' && bowlKeys) {
+    event.preventDefault()
+    bowlKeys = null
+    paintBowl()
+  } else if ((event.key === 'Enter' || event.key === ' ') && bowlKeys) {
+    event.preventDefault()
+    const { id, weights } = bowlKeys
+    bowlKeys = null
+    chooseIngredient(id, { weights, zone: keyZone })
+  } else if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+    event.preventDefault()
+    const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1
+    if (bowlKeys) bowlKeys.weights[keyZone]++
+    keyZone = wrapZone(keyZone + direction)
+    if (bowlKeys) {
+      bowlKeys.weights[keyZone]++
+      paintBowl()
+    } else if (foldAt(keyZone, direction, 0)) {
+      const guided = currentLesson(state)?.action === 'stir-bowl'
+      if (guided) advanceTutorial(state, 'stir-bowl')
+      persist()
+      if (guided) renderScreen()
+    }
+  }
+}
+
 screen.addEventListener('keydown', event => {
+  if (event.target instanceof HTMLElement && event.target.hasAttribute('data-direct-bowl')) return handleBowlKey(event)
+  if (event.target instanceof HTMLButtonElement && event.target.dataset.action === 'ingredient'
+    && state && usesDirectBowl(state) && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault()
+    if (!event.repeat) armBowlIngredient(event.target)
+    return
+  }
   if (!(event.target instanceof HTMLButtonElement) || !event.target.matches('[role="tab"]')
     || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
   const tabs = Array.from(screen.querySelectorAll<HTMLButtonElement>('.counter-tabs button:not([inert])'))
@@ -666,10 +774,21 @@ screen.addEventListener('keydown', event => {
 })
 
 screen.addEventListener('pointerdown', event => {
-  if (closing || !(event.target instanceof Element) || event.button !== 0 || drag) return
+  if (closing || options.modal || !(event.target instanceof Element) || event.button !== 0 || drag || stir || queueDrag) return
   const viewport = event.target.closest<HTMLElement>('.queue-viewport[data-scrollable]')
   if (event.isPrimary && viewport) {
     queueDrag = { pointerId: event.pointerId, x: event.clientX, scrollLeft: viewport.scrollLeft, moved: false }
+    return
+  }
+  if (event.isPrimary && state && usesDirectBowl(state) && event.target.closest('[data-direct-surface]')
+    && state.shift?.bowl.ingredients.rice && (lessonAllows(state, 'stir-bowl') || currentLesson(state)?.action === 'pack')) {
+    const point = bowlPoint(event.clientX, event.clientY)
+    if (point && Math.hypot(point.x, point.y) <= 1) {
+      bowlKeys = null
+      stir = { pointerId: event.pointerId, last: point, distance: 0, moved: false }
+      screen.setPointerCapture(event.pointerId)
+      event.preventDefault()
+    }
     return
   }
   const mixer = event.target.closest<HTMLButtonElement>('button[data-action=mix]')
@@ -684,10 +803,46 @@ screen.addEventListener('pointerdown', event => {
   const tray = event.target.closest<HTMLButtonElement>('button[data-action=ingredient]')
   const id = ingredientIds.find(key => key === tray?.dataset.id)
   if (!id || tray?.disabled || !lessonAllows(state, 'ingredient', id)) return
-  drag = { pointerId: event.pointerId, id, x: event.clientX, y: event.clientY, ghost: null }
+  const direct = state && usesDirectBowl(state)
+  if (direct) bowlKeys = null
+  drag = { pointerId: event.pointerId, id, x: event.clientX, y: event.clientY, ghost: null, ...(direct ? { weights: emptyZones() } : {}) }
 })
 
+function moveStir(x: number, y: number): void {
+  const point = bowlPoint(x, y)
+  if (!stir || !point) return
+  const gesture = stir
+  const last = gesture.last
+  gesture.last = point
+  if (Math.hypot(last.x, last.y) > 1 || Math.hypot(point.x, point.y) > 1) return
+  const dx = point.x - last.x, dy = point.y - last.y
+  const length = Math.hypot(dx, dy)
+  if (!length) return
+  traceBowl(last, point, (sample, distance) => {
+    gesture.distance += distance
+    if (gesture.distance < .5) return
+    gesture.distance -= .5
+    gesture.moved = foldAt(bowlZone(sample), dx / length, dy / length) || gesture.moved
+  })
+  bowlFlip = { zone: bowlZone(point), dx: dx / length, dy: dy / length }
+  paintBowl()
+}
+
+function movePour(x: number, y: number): BowlPoint | null {
+  if (!drag?.weights) return null
+  const point = bowlPoint(x, y)
+  const inside = point && Math.hypot(point.x, point.y) <= 1 ? point : undefined
+  if (inside && drag.last && drag.id !== 'rice') {
+    const weights = drag.weights
+    traceBowl(drag.last, inside, (sample, distance) => { weights[bowlZone(sample)] += distance })
+  }
+  drag.last = inside
+  paintBowl()
+  return inside ?? null
+}
+
 window.addEventListener('pointermove', event => {
+  if (stir?.pointerId === event.pointerId) return moveStir(event.clientX, event.clientY)
   if (queueDrag?.pointerId === event.pointerId) {
     const distance = event.clientX - queueDrag.x
     if (!queueDrag.moved) {
@@ -711,31 +866,51 @@ window.addEventListener('pointermove', event => {
   }
   const bowl = screen.querySelector('[data-drop-zone]')
   const rect = bowl?.getBoundingClientRect()
-  const inside = rect && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom
+  const inside = drag.weights ? movePour(event.clientX, event.clientY)
+    : rect && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom
   bowl?.classList.toggle('drop-ready', Boolean(inside))
   drag.ghost.style.transform = 'translate(' + (event.clientX - 23) + 'px,' + (event.clientY - 23) + 'px)'
 })
 
 function finishDrag(event: PointerEvent): void {
   if (queueDrag?.pointerId === event.pointerId) queueDrag = null
+  if (stir?.pointerId === event.pointerId) {
+    if (event.type === 'pointerup') moveStir(event.clientX, event.clientY)
+    const moved = stir.moved
+    stir = null
+    if (moved && state) {
+      if (currentLesson(state)?.action === 'stir-bowl') {
+        advanceTutorial(state, 'stir-bowl')
+        deferredRender = true
+      }
+      persist()
+    }
+    if (deferredRender) { deferredRender = false; renderScreen() }
+    return
+  }
   if (mixHold?.pointerId === event.pointerId) {
     window.clearTimeout(mixHold.timer)
     mixHold = null
     if (suppressMixClickUntil === Infinity) suppressMixClickUntil = performance.now() + 300
   }
   if (!drag || drag.pointerId !== event.pointerId) return
-  const { ghost, id } = drag
+  const point = drag.ghost && event.type === 'pointerup' ? movePour(event.clientX, event.clientY) : null
+  const { ghost, id, weights } = drag
   drag = null
   if (ghost) {
     const bowl = screen.querySelector('.drop-ready')
     ghost.remove()
     bowl?.classList.remove('drop-ready')
     suppressClickUntil = performance.now() + 320
-    if (event.type === 'pointerup' && bowl) {
+    if (weights && point) {
+      deferredRender = false
+      chooseIngredient(id, { weights, zone: bowlZone(point) })
+    } else if (!weights && event.type === 'pointerup' && bowl) {
       sound('tap', muted())
       chooseIngredient(id)
     }
   }
+  if (weights) paintBowl()
   if (deferredRender) {
     deferredRender = false
     renderScreen()
@@ -761,6 +936,7 @@ window.addEventListener('pagehide', () => {
 })
 window.addEventListener('pageshow', () => backgroundMusic(muted()))
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) cancelBowlInput()
   persist()
   backgroundMusic(muted())
   syncMixingSound()
@@ -772,7 +948,6 @@ function loop(now: number): void {
   const delta = now - lastFrame
   lastFrame = now
   if (!state || state.phase !== 'shop' || options.home || options.modal || document.hidden) return
-  const progress = mixProgress(state)
   const guest = currentCustomer(state)
   const reviewCount = state.reviews.length
   const changed = tick(state, Math.max(0, delta))
@@ -782,8 +957,8 @@ function loop(now: number): void {
       if (state.reports.at(-1)?.endReason === 'time') return showClosingNotice(state)
       return showReport(state)
     }
-    if (guest?.id !== currentCustomer(state)?.id || (progress < 100 && mixProgress(state) >= 100)) options.heatOpen = false
     if (guest?.id !== currentCustomer(state)?.id) {
+      cancelBowlInput()
       options.counterTab = initialCounterTab(state)
       options.trayPages = {}
     }

@@ -903,10 +903,6 @@ h1, h2, h3, p { margin: 0; }
   color: #375033;
   font-size: 8px;
 }
-.heat-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin-top: 5px; }
-.heat-options button { min-height: 32px; padding: 2px; border: 1px solid #e7bba5; border-radius: 6px; background: #fae3d3; font-size: 10px; font-weight: 900; }
-.heat-options button:hover:not(:disabled) { background: #f6c5b3; }
-.heat-options button:disabled { opacity: .5; }
 .pack-controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
 .pack-controls .button { min-height: 31px; padding: 4px 6px; font-size: 11px; white-space: nowrap; }
 .pack-controls .packed { background: #e5ecd4; border-color: #b4c5a7; }
@@ -971,10 +967,6 @@ h1, h2, h3, p { margin: 0; }
 .review-stars { margin-left: auto; font-size: 14px; color: #a66b2a; white-space: nowrap; }
 .review-stars i { font-style: normal; color: #dfceb0; }
 .review > p { margin-top: 6px; font-size: 12px; }
-.text-button { margin-top: 4px; padding: 4px 0; border: 0; background: none; font-size: 11px; font-weight: 900; color: #99465b; text-decoration: underline; text-underline-offset: 2px; }
-.reply-options { display: grid; gap: 3px; margin-top: 4px; }
-.reply-options button { min-height: 32px; font-size: 11px; }
-.review-reply { margin-top: 6px; padding: 5px 7px; background: #f1e5d9; border-radius: 6px; font-size: 11px; color: #6d5245; }
 .reset-copy { font-size: 13px; }
 .reset-buttons { display: flex; justify-content: flex-end; align-items: center; gap: 5px; margin-top: 12px; }
 .reset-buttons .button { min-height: 37px; font-size: 12px; }

@@ -4,7 +4,7 @@ import { ingredientIds, ingredients, levels, menuIds, profiles, regularStories }
 import { createDailyActivity as createActivity, currentShiftPhase, shiftNotice } from '../src/engagement.ts'
 import { priceOf, salesRevenue, sumReports } from '../src/economy.ts'
 import { addHeat, addIngredient, closeShop, currentCustomer, deliver, finishMix, mixDuration, newGame,
-  nextDay, openShop, packBowl, PATIENCE_MS, purchase, replyToReview, selectCustomer, tick, toggleMix } from '../src/game.ts'
+  nextDay, openShop, packBowl, PATIENCE_MS, purchase, selectCustomer, tick, toggleMix } from '../src/game.ts'
 import { parseSave } from '../src/storage.ts'
 import { dialogContent, renderApp } from '../src/ui.ts'
 import type { GameState, IngredientId, Level, MenuId } from '../src/types.ts'
@@ -363,7 +363,7 @@ test('crispy special requires correct late crunch and light mixing; failure rema
   assert.equal(failed.reviews[0].stars, 4)
 })
 
-test('EXP from orders, missions and replies unlocks only at next day, including all four levels', () => {
+test('EXP from orders and missions unlocks only at next day, including all four levels', () => {
   for (const [level, threshold] of [[1, 40], [2, 120], [3, 240]] as const) {
     const state = stocked(1, level)
     state.reputation = threshold - 5
@@ -379,16 +379,6 @@ test('EXP from orders, missions and replies unlocks only at next day, including 
     assert.equal(state.daily!.day, state.day)
     assert.equal(state.daily!.missions[0].progress, 0)
   }
-  const state = stocked()
-  start(state)
-  const guest = arrive(state)
-  tick(state, guest.patienceMs)
-  closeShop(state)
-  const before = state.reputation
-  assert.equal(replyToReview(state, guest.id, 'friendly').ok, true)
-  assert.equal(replyToReview(state, guest.id, 'friendly').ok, false)
-  assert.equal(state.reputation, before + 1)
-  assert.equal(state.reports[0].xpEarned, state.tally.xpEarned)
 })
 
 test('cash, sales, rewards, tax, profit and remaining stock reconcile across paid partial orders and days', () => {
@@ -443,7 +433,7 @@ test('version 5 migration keeps partial sales and disables new features until th
   delete legacy.tally.tips
   delete legacy.tally.xpEarned
   const migrated = parseSave(JSON.stringify(legacy))!
-  assert.equal(migrated.version, 7)
+  assert.equal(migrated.version, 9)
   assert.equal(migrated.daily, null)
   assert.equal(currentCustomer(migrated)!.servedPortions.length, 1)
   assert.equal(currentCustomer(migrated)!.order.quantity, 3)
@@ -494,7 +484,7 @@ test('HUD and receipts expose mission progress, story dialogue, special requirem
   start(state)
   const guest = arrive(state, 0)
   const options = { home: false, initialMute: false, prepTab: 'market' as const, previousCustomers: new Set<number>(), customerSpeechId: guest.id,
-    modal: null, heatOpen: false, replyFor: null, reportPeriod: 'day' as const, reportDay: 2, warning: '', departure: null }
+    modal: null, reportPeriod: 'day' as const, reportDay: 2, warning: '', departure: null }
   let html = renderApp(state, options)
   assert.match(html, /data-action="shop-menu"/)
   const menu = () => dialogContent(state, { ...options, modal: 'shop-menu' })

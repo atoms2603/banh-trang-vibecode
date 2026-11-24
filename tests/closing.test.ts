@@ -8,6 +8,8 @@ import * as data from '../src/data.ts'
 import * as counter from '../src/counter.ts'
 import * as tutorial from '../src/tutorial.ts'
 import * as economy from '../src/economy.ts'
+import * as coating from '../src/coating.ts'
+import * as bowlView from '../src/bowl-view.ts'
 import * as reviews from '../src/reviews.ts'
 
 const main = ts.transpileModule(readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8'), {
@@ -57,6 +59,7 @@ function mount(reason: 'time' | 'queue-cleared') {
   const state = game.newGame()
   for (const id of data.ingredientIds) state.inventory[id] = 50
   game.openShop(state)
+  delete state.shift!.directBowl
   game.tick(state, 900, () => .1)
   state.shift!.elapsedMs = game.SHIFT_MS - 10
   state.shift!.queue[0].arrivalMs = game.SHIFT_MS - 1000
@@ -67,9 +70,9 @@ function mount(reason: 'time' | 'queue-cleared') {
   let saved = ''
   const modules: Record<string, unknown> = {
     './game.ts': game, './data.ts': data, './counter.ts': counter, './tutorial.ts': tutorial,
-    './economy.ts': economy, './reviews.ts': reviews,
+    './economy.ts': economy, './reviews.ts': reviews, './coating.ts': coating, './bowl-view.ts': bowlView,
     './art.ts': { food: () => '', icon: () => '' },
-    './audio.ts': { backgroundMusic() {}, mixingSound() {}, sound() {} },
+    './audio.ts': { backgroundMusic() {}, mixingSound() {}, sound() {}, foldSound() {}, stopFoldSound() {} },
     './storage.ts': { loadGame: () => ({ game: state, warning: '' }), saveGame: () => { saved = JSON.stringify(state); return '' } },
     './ui.ts': { renderApp: () => state.phase, dialogContent: () => '', updateClocks() {} },
   }

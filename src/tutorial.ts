@@ -32,6 +32,15 @@ const lessons: readonly Lesson[] = [
   { action: 'deliver', instruction: 'Bấm Giao món để phục vụ vị khách đầu tiên.' },
 ]
 
+const directLessons: readonly Lesson[] = [
+  ...lessons.slice(0, 10),
+  { action: 'ingredient', id: 'rice', instruction: 'Kéo một phần bánh tráng vào lòng thau rồi thả.' },
+  { action: 'ingredient', id: 'kumquat', instruction: 'Kéo tắc vào thau, rê qua vài chỗ trên bánh rồi thả để rải nước tắc.' },
+  { action: 'ingredient', id: 'shrimpSalt', instruction: 'Rê muối tôm theo đường gợi ý để rải vào nhiều chỗ.' },
+  { action: 'stir-bowl', instruction: 'Kéo ngay trên thau để đảo bánh. Thử đảo từ chỗ đậm sang vùng còn nhạt.' },
+  ...lessons.slice(-2),
+]
+
 export function validTutorialStep(value: unknown, version: number): boolean {
   const count = lessons.length - (version < 3 ? menuLessonCount : 0) - (version < 4 ? 1 : 0)
   return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < count)
@@ -45,7 +54,8 @@ export function upgradeTutorialStep(step: number, version: number): number {
 export function currentLesson(state: GameState | null) {
   const step = state?.tutorialStep
   if (state?.day !== 1 || state.phase === 'report' || step === undefined) return undefined
-  const lesson = lessons[step]
+  const sequence = state.shift?.directBowl ? directLessons : lessons
+  const lesson = sequence[step]
   if (!lesson) return undefined
   const customerId = state.shift?.queue[0]?.id
   return {
@@ -53,7 +63,7 @@ export function currentLesson(state: GameState | null) {
     id: lesson.action === 'customer' && customerId !== undefined ? String(customerId) : lesson.id,
     instruction: lesson.action === 'customer' && customerId === undefined ? 'Đợi vị khách đầu tiên ghé quầy.' : lesson.instruction,
     step,
-    total: lessons.length,
+    total: sequence.length,
   }
 }
 
